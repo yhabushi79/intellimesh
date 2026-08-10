@@ -1,0 +1,23 @@
+---
+# Phase 1 verify — run from laptop AFTER Satellite GUI Remote Execution
+# Targets: both RHEL VMs
+
+- name: "Phase 1 — Verify crypto-policy on both RHEL VMs"
+  hosts: app_hosts
+  become: true
+
+  tasks:
+    - name: Show active crypto-policy
+      ansible.builtin.command:
+        cmd: update-crypto-policies --show
+      register: policy_after
+      changed_when: false
+
+    - name: Assert FUTURE is active
+      ansible.builtin.assert:
+        that:
+          - policy_after.stdout == "FUTURE"
+        success_msg: "{{ inventory_hostname }} crypto-policy=FUTURE"
+        fail_msg: >-
+          {{ inventory_hostname }} crypto-policy={{ policy_after.stdout }}.
+          Complete Satellite Remote Execution on both hosts first.

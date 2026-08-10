@@ -1,0 +1,108 @@
+---
+# Phase 5–6 — Compare patched vs control host state (local evidence)
+# Prefer UnifAI + Satellite/AAP MCP for the full investigation narrative.
+
+- name: "Phase 5 — Gather live host evidence"
+  hosts: app_hosts
+  become: true
+
+  tasks:
+    - name: Read active crypto-policy
+      ansible.builtin.command:
+        cmd: update-crypto-policies --show
+      register: crypto_policy
+      changed_when: false
+
+    - name: Check legacy SSL template
+      ansible.builtin.stat:
+        path: /etc/nginx/conf.d/ssl-hardening.conf
+      register: legacy_template
+
+    - name: Read legacy SSL template when present
+      ansible.builtin.slurp:
+        src: /etc/nginx/conf.d/ssl-hardening.conf
+      register: legacy_slurp
+      when: legacy_template.stat.exists
+
+    - name: Probe local TLS handshake
+      ansible.builtin.shell:
+        cmd: echo | openssl s_client -connect localhost:443 2>&1 | grep -E "Cipher|Protocol|Handshake" || true
+      register: nginx_cipher
+      changed_when: false
+
+    - name: Store host evidence
+      ansible.builtin.set_fact:
+        evidence:
+          host: "{{ inventory_hostname }}"
+          crypto_policy: "{{ crypto_policy.stdout }}"
+          legacy_template_present: "{{ legacy_template.stat.exists | bool }}"
+          legacy_ciphers: >-
+            {{
+              (legacy_slurp.content | b64decode)
+              if legacy_template.stat.exists else 'N/A'
+            }}
+          nginx_cipher: "{{ nginx_cipher.stdout | default('handshake failed') }}"
+
+- name: "Phase 6 — Correlate patched vs control"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Build host evidence map
+      ansible.builtin.set_fact:
+        host_evidence: {}
+
+    - name: Add each app host to evidence map
+      ansible.builtin.set_fact:
+        host_evidence: "{{ host_evidence | combine({item: hostvars[item].evidence}) }}"
+      loop: "{{ groups['app_hosts'] }}"
+
+    - name: Identify failing pattern hosts
+      ansible.builtin.set_fact:
+        conflict_hosts: >-
+          {{
+            host_evidence.values()
+            | selectattr('crypto_policy', 'equalto', 'FUTURE')
+            | selectattr('legacy_template_present', 'equalto', true)
+            | map(attribute='host')
+            | list
+          }}
+        healthy_future_hosts: >-
+          {{
+            host_evidence.values()
+            | selectattr('crypto_policy', 'equalto', 'FUTURE')
+            | selectattr('legacy_template_present', 'equalto', false)
+            | map(attribute='host')
+            | list
+          }}
+
+    - name: Root cause from host evidence
+      ansible.builtin.debug:
+        msg: |
+          Host state:
+          {% for name, ev in host_evidence.items() %}
+          - {{ name }}: policy={{ ev.crypto_policy }} legacy_pin={{ ev.legacy_template_present }} tls={{ ev.nginx_cipher | truncate(60) }}
+          {% endfor %}
+
+          Pattern:
+          - FUTURE + legacy pin (failing): {{ conflict_hosts | join(', ') | default('(none)') }}
+          - FUTURE + no legacy pin (healthy): {{ healthy_future_hosts | join(', ') | default('(none)') }}
+
+          Causal chain:
+          1. Satellite set crypto-policy to FUTURE on both hosts
+          2. AAP post-patch pinned legacy ciphers on patched only
+          3. FUTURE blocks those ciphers → TLS fails only on patched
+          4. Control proves the intersection is the root cause
+
+    - name: Assert investigation found the conflict pattern
+      ansible.builtin.assert:
+        that:
+          - conflict_hosts | length > 0
+          - healthy_future_hosts | length > 0
+        success_msg: >-
+          Correlation confirmed: conflict on {{ conflict_hosts | join(', ') }};
+          healthy control on {{ healthy_future_hosts | join(', ') }}.
+        fail_msg: >-
+          Expected one FUTURE+legacy host and one FUTURE-only host.
+          Complete Satellite Phase 1 and AAP Phase 2 first.

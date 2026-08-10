@@ -1,0 +1,153 @@
+---
+# Phase 0 — Prepare both demo RHEL VMs (run from your laptop)
+# Targets: rhel-patched + rhel-control
+
+- name: "Phase 0 — Prepare demo hosts"
+  hosts: app_hosts
+  become: true
+  vars:
+    demo_domain: app-demo.example.com
+    tls_cert_path: /etc/pki/tls/certs/demo.crt
+    tls_key_path: /etc/pki/tls/private/demo.key
+
+  tasks:
+    - name: Install nginx and OpenSSL
+      ansible.builtin.dnf:
+        name:
+          - nginx
+          - openssl
+          - crypto-policies
+          - crypto-policies-scripts
+        state: present
+
+    - name: Stop and disable httpd if present (avoids port 443 conflict)
+      ansible.builtin.service:
+        name: httpd
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Ensure TLS directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /etc/pki/tls/certs
+        - /etc/pki/tls/private
+
+    - name: Generate self-signed TLS certificate
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509 -nodes -days 365
+          -newkey rsa:2048
+          -keyout {{ tls_key_path }}
+          -out {{ tls_cert_path }}
+          -subj "/CN={{ demo_domain }}"
+        creates: "{{ tls_cert_path }}"
+
+    - name: Set key file permissions
+      ansible.builtin.file:
+        path: "{{ tls_key_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Set cert file permissions
+      ansible.builtin.file:
+        path: "{{ tls_cert_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Restore SELinux context on TLS files
+      ansible.builtin.command:
+        cmd: restorecon -v {{ tls_cert_path }} {{ tls_key_path }}
+      changed_when: false
+      failed_when: false
+
+    - name: Remove default nginx SSL config if present
+      ansible.builtin.file:
+        path: /etc/nginx/conf.d/ssl.conf
+        state: absent
+
+    - name: Deploy base SSL config
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/demo-ssl.conf.j2"
+        dest: /etc/nginx/conf.d/demo-ssl.conf
+        mode: "0644"
+      notify: restart nginx
+
+    - name: Ensure crypto-policy is DEFAULT (clean baseline)
+      ansible.builtin.command:
+        cmd: update-crypto-policies --set DEFAULT
+      changed_when: true
+
+    - name: Validate nginx configuration
+      ansible.builtin.command:
+        cmd: nginx -t
+      register: nginx_test
+      changed_when: false
+      failed_when: false
+
+    - name: Show nginx -t output on failure
+      ansible.builtin.fail:
+        msg: |
+          nginx config test failed:
+          stdout: {{ nginx_test.stdout }}
+          stderr: {{ nginx_test.stderr }}
+      when: nginx_test.rc != 0
+
+    - name: Stop nginx service if present
+      ansible.builtin.service:
+        name: nginx
+        state: stopped
+      failed_when: false
+
+    - name: Kill leftover nginx processes holding ports
+      ansible.builtin.shell: |
+        set -e
+        if command -v pkill >/dev/null; then
+          pkill -x nginx || true
+        fi
+        sleep 1
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Enable and restart nginx with new config
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+        enabled: true
+
+    - name: Open firewall for HTTPS (if firewalld is running)
+      ansible.builtin.shell: |
+        if systemctl is-active --quiet firewalld; then
+          firewall-cmd --permanent --add-port=443/tcp
+          firewall-cmd --reload
+          echo opened
+        else
+          echo skipped
+        fi
+      args:
+        executable: /bin/bash
+      register: firewall_https
+      changed_when: "'opened' in firewall_https.stdout"
+      failed_when: false
+
+    - name: Verify HTTPS endpoint
+      ansible.builtin.uri:
+        url: "https://localhost/api/health"
+        validate_certs: false
+      register: health_check
+
+    - name: Show health check result
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} → {{ health_check.json }}"
+
+  handlers:
+    - name: restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted

@@ -1,0 +1,44 @@
+---
+# Phase 3 — Host health snapshot (looks quiet; conflict may be latent)
+
+- name: "Phase 3 — Verify estate looks quiet"
+  hosts: app_hosts
+  become: true
+
+  tasks:
+    - name: Check host uptime
+      ansible.builtin.command:
+        cmd: uptime
+      register: host_uptime
+      changed_when: false
+
+    - name: Check nginx is running
+      ansible.builtin.service_facts:
+
+    - name: Check system load
+      ansible.builtin.command:
+        cmd: cat /proc/loadavg
+      register: loadavg
+      changed_when: false
+
+    - name: Check current crypto-policy
+      ansible.builtin.command:
+        cmd: update-crypto-policies --show
+      register: crypto_policy
+      changed_when: false
+
+    - name: Check if legacy SSL template exists
+      ansible.builtin.stat:
+        path: /etc/nginx/conf.d/ssl-hardening.conf
+      register: legacy_template
+
+    - name: Estate status summary
+      ansible.builtin.debug:
+        msg: |
+          HOST: {{ inventory_hostname }}
+          Uptime:          {{ host_uptime.stdout }}
+          Load:            {{ loadavg.stdout }}
+          nginx:           {{ ansible_facts.services['nginx.service'].state | default('unknown') }}
+          Crypto-policy:   {{ crypto_policy.stdout }}
+          Legacy template: {{ 'PRESENT' if legacy_template.stat.exists else 'absent' }}
+          Conflict latent: {{ (crypto_policy.stdout == 'FUTURE' and legacy_template.stat.exists) | bool }}

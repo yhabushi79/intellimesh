@@ -1,0 +1,5 @@
+---
+# Shared defaults (local Ansible + AAP project sync)
+demo_domain: app-demo.example.com
+tls_cert_path: /etc/pki/tls/certs/demo.crt
+tls_key_path: /etc/pki/tls/private/demo.key

@@ -1,0 +1,26 @@
+# Base nginx SSL config — uses system crypto-policy defaults
+server {
+    listen 443 ssl;
+    server_name {{ demo_domain | default('_') }};
+
+    ssl_certificate     {{ tls_cert_path }};
+    ssl_certificate_key {{ tls_key_path }};
+
+    # No explicit ssl_ciphers or ssl_protocols — inherits from system crypto-policy
+    # This is the correct, modern approach
+
+    location /api/health {
+        default_type application/json;
+        return 200 '{"status":"ok","host":"{{ inventory_hostname }}"}';
+    }
+
+    location /api/payments {
+        default_type application/json;
+        return 200 '{"status":"processed","host":"{{ inventory_hostname }}","timestamp":"$time_iso8601"}';
+    }
+
+    location / {
+        default_type text/plain;
+        return 200 'IntelliMesh Demo — {{ inventory_hostname }}\n';
+    }
+}
