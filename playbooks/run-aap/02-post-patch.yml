@@ -7,7 +7,7 @@
 # Pins AES128-SHA / AES256-SHA — blocked by FUTURE crypto-policy.
 
 - name: "Phase 2 — Post-patch: restart nginx + apply legacy SSL template"
-  hosts: "{{ target_vms | default('all') }}"
+  hosts: "{{ target_vms }}"
   become: true
 
   tasks:
