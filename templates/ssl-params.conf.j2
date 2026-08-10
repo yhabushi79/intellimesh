@@ -1,0 +1,6 @@
+# Global SSL session parameters (healthy baseline)
+# Deployed by Phase 0 setup. Overwritten by injection in Phase 1b.
+
+SSLSessionCache shmcb:/run/httpd/sslcache(512000)
+SSLSessionCacheTimeout 300
+SSLSessionTickets on

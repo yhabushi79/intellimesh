@@ -1,0 +1,7 @@
+# Injected by AAP "Routine Security Compliance" job — JIRA-4821
+# Disables TLS session reuse to enforce strict Perfect Forward Secrecy.
+# Combined with FUTURE crypto-policy, this forces every HTTPS request
+# to perform a full 3072-bit RSA handshake — creating CPU starvation under load.
+
+SSLSessionCache none
+SSLSessionTickets off

@@ -1,0 +1,56 @@
+---
+# Phase 4 — Rollback: revert crypto-policy on both VMs and restore session cache on patched
+# AAP job template: "IntelliMesh Rollback"
+# Limit: (run against all backends, or patched for session-only fix)
+
+- name: "Phase 4 — Revert crypto-policy (both backends)"
+  hosts: backends
+  become: true
+
+  tasks:
+    - name: Revert crypto-policy to DEFAULT
+      ansible.builtin.command:
+        cmd: update-crypto-policies --set DEFAULT
+      changed_when: true
+
+- name: "Phase 4 — Restore session cache and reload (patched only)"
+  hosts: "{{ target_vms | default('patched') }}"
+  become: true
+
+  tasks:
+    - name: Restore healthy SSL session parameters
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/ssl-params.conf.j2"
+        dest: /etc/httpd/conf.d/ssl-params.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Validate httpd configuration
+      ansible.builtin.command:
+        cmd: httpd -t
+      register: httpd_validate
+      changed_when: false
+
+    - name: Reload httpd
+      ansible.builtin.service:
+        name: httpd
+        state: reloaded
+
+    - name: Verify TLS handshake is fast again
+      ansible.builtin.shell:
+        cmd: >
+          curl -sk -o /dev/null -w
+          "TCP: %{time_connect}s | TLS: %{time_appconnect}s | Total: %{time_total}s"
+          https://localhost/api/health
+      register: tls_verify
+      changed_when: false
+
+    - name: Rollback result
+      ansible.builtin.debug:
+        msg: |
+          HOST: {{ inventory_hostname }}
+          Crypto-policy: reverted to DEFAULT
+          Session cache: restored (shmcb)
+          TLS timing: {{ tls_verify.stdout }}
+          Status: RESOLVED

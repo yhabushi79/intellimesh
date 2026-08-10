@@ -1,8 +1,0 @@
-# WARNING: Legacy TLS hardening — carried over from 2023 workaround (JIRA-4821)
-# This pins CBC-mode SHA-1 ciphers that conflict with the FUTURE crypto-policy.
-# Applied by: post-patch Ansible job
-# Origin: TLS 1.0 deprecation workaround, never cleaned up
-
-ssl_protocols TLSv1.2;
-ssl_ciphers AES128-SHA:AES256-SHA;
-ssl_prefer_server_ciphers on;

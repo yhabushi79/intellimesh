@@ -1,0 +1,40 @@
+---
+# Phase 1b — AAP "Routine Security Compliance" job
+# Disables TLS session caching on VM #1 to enforce Perfect Forward Secrecy.
+# Combined with FUTURE crypto-policy, every request performs a full expensive handshake.
+#
+# AAP job template: "IntelliMesh Security Compliance"
+# Limit: patched
+
+- name: "Phase 1b — Inject TLS compliance override (disable session cache)"
+  hosts: "{{ target_vms | default('patched') }}"
+  become: true
+
+  tasks:
+    - name: Overwrite SSL session params with compliance override
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/tls-compliance-override.conf.j2"
+        dest: /etc/httpd/conf.d/ssl-params.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: reload httpd
+
+    - name: Verify httpd config syntax
+      ansible.builtin.command:
+        cmd: httpd -t
+      register: httpd_syntax
+      changed_when: false
+
+    - name: Injection result
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: TLS session cache disabled.
+          Every HTTPS request now requires a full handshake.
+          Under load with FUTURE crypto-policy → CPU starvation.
+
+  handlers:
+    - name: reload httpd
+      ansible.builtin.service:
+        name: httpd
+        state: reloaded
