@@ -13,11 +13,11 @@
       register: policy_after
       changed_when: false
 
-    - name: Assert FUTURE is active
+    - name: Assert FUTURE:CLASSICAL-COMPAT is active
       ansible.builtin.assert:
         that:
-          - policy_after.stdout == "FUTURE"
-        success_msg: "{{ inventory_hostname }} crypto-policy=FUTURE"
+          - policy_after.stdout == "FUTURE:CLASSICAL-COMPAT"
+        success_msg: "{{ inventory_hostname }} crypto-policy=FUTURE:CLASSICAL-COMPAT"
         fail_msg: >-
           {{ inventory_hostname }} crypto-policy={{ policy_after.stdout }}.
           Complete Satellite Remote Execution on both hosts first.

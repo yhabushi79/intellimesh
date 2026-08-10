@@ -11,6 +11,24 @@
     tls_key_path: /etc/pki/tls/private/demo.key
 
   tasks:
+    - name: Deploy CLASSICAL-COMPAT crypto subpolicy
+      ansible.builtin.copy:
+        dest: /etc/crypto-policies/policies/modules/CLASSICAL-COMPAT.pmod
+        content: |
+          key_exchange = +DHE +ECDHE
+        mode: "0644"
+
+    - name: Reset crypto-policy to DEFAULT (ensures dnf can reach repos)
+      ansible.builtin.command:
+        cmd: update-crypto-policies --set DEFAULT
+      changed_when: true
+
+    - name: Remove sshd KEX drop-in if present (subpolicy handles it)
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d/01-allow-classical-kex.conf
+        state: absent
+      notify: restart sshd
+
     - name: Install nginx and OpenSSL
       ansible.builtin.dnf:
         name:
@@ -40,7 +58,7 @@
       ansible.builtin.command:
         cmd: >
           openssl req -x509 -nodes -days 365
-          -newkey rsa:2048
+          -newkey rsa:4096
           -keyout {{ tls_key_path }}
           -out {{ tls_cert_path }}
           -subj "/CN={{ demo_domain }}"
@@ -77,11 +95,6 @@
         dest: /etc/nginx/conf.d/demo-ssl.conf
         mode: "0644"
       notify: restart nginx
-
-    - name: Ensure crypto-policy is DEFAULT (clean baseline)
-      ansible.builtin.command:
-        cmd: update-crypto-policies --set DEFAULT
-      changed_when: true
 
     - name: Validate nginx configuration
       ansible.builtin.command:
@@ -150,4 +163,9 @@
     - name: restart nginx
       ansible.builtin.service:
         name: nginx
+        state: restarted
+
+    - name: restart sshd
+      ansible.builtin.service:
+        name: sshd
         state: restarted

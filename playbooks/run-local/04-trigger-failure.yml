@@ -5,6 +5,7 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  become: false
 
   vars:
     patched_hosts: "{{ groups['patched'] | map('extract', hostvars, 'ansible_host') | list }}"
@@ -12,8 +13,8 @@
 
   tasks:
     - name: "TLS handshake on patched hosts (expect failure)"
-      ansible.builtin.command:
-        cmd: openssl s_client -connect {{ item }}:443 -brief
+      ansible.builtin.shell:
+        cmd: echo | openssl s_client -connect {{ item }}:443 2>&1
       register: patched_tls
       loop: "{{ patched_hosts }}"
       failed_when: false
@@ -23,13 +24,13 @@
       ansible.builtin.debug:
         msg: |
           HOST: {{ item.item }}
-          TLS Handshake: {{ 'FAILED' if item.rc != 0 else 'OK' }}
-          detail: {{ item.stderr_lines | last | default(item.stdout_lines | last | default('n/a')) }}
+          TLS Handshake: {{ 'FAILED' if 'handshake failure' in (item.stdout | lower) or 'alert handshake' in (item.stdout | lower) or item.rc != 0 else 'OK' }}
+          Cipher: {{ (item.stdout_lines | select('match', '.*Cipher\\s*(is|:).*') | list | first | default('none')) }}
       loop: "{{ patched_tls.results }}"
 
     - name: "TLS handshake on control hosts (expect success)"
-      ansible.builtin.command:
-        cmd: openssl s_client -connect {{ item }}:443 -brief
+      ansible.builtin.shell:
+        cmd: echo | openssl s_client -connect {{ item }}:443 2>&1
       register: control_tls
       loop: "{{ control_hosts }}"
       failed_when: false
@@ -39,7 +40,8 @@
       ansible.builtin.debug:
         msg: |
           HOST: {{ item.item }} (control)
-          TLS Handshake: {{ 'FAILED' if item.rc != 0 else 'OK' }}
+          TLS Handshake: {{ 'FAILED' if 'handshake failure' in (item.stdout | lower) or 'alert handshake' in (item.stdout | lower) or item.rc != 0 else 'OK' }}
+          Cipher: {{ (item.stdout_lines | select('match', '.*Cipher\\s*(is|:).*') | list | first | default('none')) }}
       loop: "{{ control_tls.results }}"
 
     - name: HTTPS calls to payments API

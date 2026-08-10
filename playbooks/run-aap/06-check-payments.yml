@@ -1,0 +1,25 @@
+---
+# Check payments API health (run via AAP job template)
+#
+# AAP UI: create/launch job template → this playbook
+# Inventory group: app_hosts (both VMs)
+
+- name: "Check payments API health"
+  hosts: all
+  become: false
+  gather_facts: false
+
+  tasks:
+    - name: Probe payments API
+      ansible.builtin.uri:
+        url: "https://localhost/api/payments"
+        validate_certs: false
+        timeout: 10
+      register: payments_check
+      ignore_errors: true
+
+    - name: Payments API status
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} →
+          {% if payments_check.failed %}DOWN: {{ payments_check.msg }}{% else %}OK (HTTP {{ payments_check.status }}){% endif %}
