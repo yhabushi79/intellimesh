@@ -5,7 +5,7 @@
 # Removes legacy cipher pin and reloads nginx.
 
 - name: "Phase 7 — Targeted remediation (patched hosts only)"
-  hosts: patched
+  hosts: "{{ target_vms }}"
   become: true
 
   tasks:
