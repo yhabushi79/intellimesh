@@ -1,8 +1,8 @@
 # Injected by AAP "Routine Security Compliance" job — JIRA-4821
-# Enforces 8192-bit RSA key + disables TLS session reuse.
+# Enforces 6144-bit RSA key + disables TLS session reuse.
 # Combined with FUTURE crypto-policy, every HTTPS request performs
-# a full handshake with expensive RSA-8192 signing — creating
-# CPU starvation under load.
+# a full handshake with expensive RSA-6144 signing — creating
+# subtle CPU pressure under load.
 
 Listen 443 https
 

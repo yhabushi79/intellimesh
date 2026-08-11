@@ -1,13 +1,13 @@
 ---
 # Phase 1b — AAP "Routine Security Compliance" job
-# Regenerates the TLS certificate with RSA-8192 and disables session caching.
-# RSA-8192 signing costs ~35-50ms per handshake on x86_64 (vs ~3-5ms for RSA-4096).
+# Regenerates the TLS certificate with RSA-6144 and disables session caching.
+# RSA-6144 signing costs ~15-20ms per handshake on x86_64 (vs ~3-5ms for RSA-4096).
 # Combined with session cache disabled, every request forces a full expensive handshake.
 #
 # AAP job template: "IntelliMesh Security Compliance"
 # Limit: patched
 
-- name: "Phase 1b — Inject TLS compliance override (RSA-8192 + disable session cache)"
+- name: "Phase 1b — Inject TLS compliance override (RSA-6144 + disable session cache)"
   hosts: "{{ target_vms | default('patched') }}"
   become: true
 
@@ -17,7 +17,7 @@
     demo_domain: app-demo.example.com
 
   tasks:
-    - name: Remove existing TLS certificate (compliance requires RSA-8192)
+    - name: Remove existing TLS certificate (compliance requires RSA-6144)
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
@@ -25,11 +25,11 @@
         - "{{ tls_cert_path }}"
         - "{{ tls_key_path }}"
 
-    - name: Generate RSA-8192 TLS certificate (compliance mandate)
+    - name: Generate RSA-6144 TLS certificate (compliance mandate)
       ansible.builtin.command:
         cmd: >
           openssl req -x509 -nodes -days 365
-          -newkey rsa:8192
+          -newkey rsa:6144
           -keyout {{ tls_key_path }}
           -out {{ tls_cert_path }}
           -subj "/CN={{ demo_domain }}"
@@ -60,8 +60,8 @@
     - name: Injection result
       ansible.builtin.debug:
         msg: >-
-          {{ inventory_hostname }}: TLS cert upgraded to RSA-8192 + session cache disabled.
-          Every HTTPS request now requires a full handshake with expensive 8192-bit signing.
+          {{ inventory_hostname }}: TLS cert upgraded to RSA-6144 + session cache disabled.
+          Every HTTPS request now requires a full handshake with expensive 6144-bit signing.
           Under load → CPU starvation on TLS handshakes.
 
   handlers:
