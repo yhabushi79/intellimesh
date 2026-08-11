@@ -1,20 +1,46 @@
 ---
 # Phase 1b — AAP "Routine Security Compliance" job
-# Disables TLS session caching on VM #1 to enforce Perfect Forward Secrecy.
-# Combined with FUTURE crypto-policy, every request performs a full expensive handshake.
+# Regenerates the TLS certificate with RSA-8192 and disables session caching.
+# RSA-8192 signing costs ~35-50ms per handshake on x86_64 (vs ~3-5ms for RSA-4096).
+# Combined with session cache disabled, every request forces a full expensive handshake.
 #
 # AAP job template: "IntelliMesh Security Compliance"
 # Limit: patched
 
-- name: "Phase 1b — Inject TLS compliance override (disable session cache)"
+- name: "Phase 1b — Inject TLS compliance override (RSA-8192 + disable session cache)"
   hosts: "{{ target_vms | default('patched') }}"
   become: true
 
+  vars:
+    tls_cert_path: /etc/pki/tls/certs/demo.crt
+    tls_key_path: /etc/pki/tls/private/demo.key
+    demo_domain: app-demo.example.com
+
   tasks:
-    - name: Generate 4096-bit DH parameters (pre-computed if exists)
+    - name: Remove existing TLS certificate (compliance requires RSA-8192)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ tls_cert_path }}"
+        - "{{ tls_key_path }}"
+
+    - name: Generate RSA-8192 TLS certificate (compliance mandate)
       ansible.builtin.command:
-        cmd: openssl dhparam -out /etc/pki/tls/private/dhparams.pem 4096
-        creates: /etc/pki/tls/private/dhparams.pem
+        cmd: >
+          openssl req -x509 -nodes -days 365
+          -newkey rsa:8192
+          -keyout {{ tls_key_path }}
+          -out {{ tls_cert_path }}
+          -subj "/CN={{ demo_domain }}"
+      notify: restart httpd
+
+    - name: Set key file permissions
+      ansible.builtin.file:
+        path: "{{ tls_key_path }}"
+        owner: root
+        group: root
+        mode: "0600"
 
     - name: Overwrite SSL session params with compliance override
       ansible.builtin.template:
@@ -23,7 +49,7 @@
         owner: root
         group: root
         mode: "0644"
-      notify: reload httpd
+      notify: restart httpd
 
     - name: Verify httpd config syntax
       ansible.builtin.command:
@@ -34,12 +60,12 @@
     - name: Injection result
       ansible.builtin.debug:
         msg: >-
-          {{ inventory_hostname }}: TLS session cache disabled.
-          Every HTTPS request now requires a full handshake.
-          Under load with FUTURE crypto-policy → CPU starvation.
+          {{ inventory_hostname }}: TLS cert upgraded to RSA-8192 + session cache disabled.
+          Every HTTPS request now requires a full handshake with expensive 8192-bit signing.
+          Under load → CPU starvation on TLS handshakes.
 
   handlers:
-    - name: reload httpd
+    - name: restart httpd
       ansible.builtin.service:
         name: httpd
         state: restarted
