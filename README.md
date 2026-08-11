@@ -91,7 +91,7 @@ It round-robins raw TCP connections to the two backend VMs.
 |------|------|----|---------|
 | `rhel-patched` | Backend (degraded) | `10.46.253.221` | httpd |
 | `rhel-control` | Backend (healthy) | `10.46.250.70` | httpd |
-| `rhel-lb` | Load balancer | `<TBD>` | nginx stream |
+| `rhel-lb` | Load balancer | `10.46.254.38` | nginx stream |
 
 | Platform | URL |
 |----------|-----|
@@ -189,7 +189,7 @@ Run continuous load to surface the degradation:
 ```bash
 # Continuous load (runs forever until you Ctrl+C)
 while true; do
-  ab -n 1000 -c 50 https://<LB_IP>/api/health
+  ab -n 1000 -c 50 https://10.46.254.38/api/health
   sleep 1
 done
 ```
@@ -197,14 +197,14 @@ done
 Or a single burst:
 
 ```bash
-ab -n 5000 -c 50 https://<LB_IP>/api/health
+ab -n 5000 -c 50 https://10.46.254.38/api/health
 ```
 
 Or with curl (no extra tools needed):
 
 ```bash
 for i in $(seq 1 20); do
-  curl -sk -o /dev/null -w "req=$i  TLS=%{time_appconnect}s  Total=%{time_total}s\n" https://<LB_IP>/api/health &
+  curl -sk -o /dev/null -w "req=$i  TLS=%{time_appconnect}s  Total=%{time_total}s\n" https://10.46.254.38/api/health &
 done; wait
 ```
 
@@ -221,15 +221,39 @@ done; wait
 |---|---|
 | **Run from** | Grafana dashboards or SSH into VMs directly |
 
-What to look for in Grafana:
+#### Grafana Panels — What to expect at each phase
 
-| Metric | VM #1 (patched) | VM #2 (control) |
-|--------|-----------------|-----------------|
-| CPU usage (httpd) | 80–100% | 5% |
-| TLS handshake latency | 1.0–2.0s | 0.015s |
-| TCP SYN_RECV queue | growing | 0 |
-| HTTP error rate | 0% | 0% |
-| HTTP response code | 200 | 200 |
+**Before injection (Phase 0 — healthy baseline):**
+
+| Panel | VM #1 (patched) | VM #2 (control) | Notes |
+|-------|-----------------|-----------------|-------|
+| TLS Handshake Latency (seconds) | ~0.015–0.050s | ~0.015–0.050s | Both flat and overlapping |
+| httpd CPU % | 1–5% | 1–5% | Minimal crypto work |
+| HTTP Error Rate | 0% | 0% | All healthy |
+| HTTP Response Code | 200 | 200 | Normal operation |
+
+**After injection (Phase 1a + 1b + load):**
+
+| Panel | VM #1 (patched) | VM #2 (control) | Notes |
+|-------|-----------------|-----------------|-------|
+| TLS Handshake Latency (seconds) | **1.0–2.0s** | ~0.015s | Patched spikes — full 3072-bit handshake every request |
+| httpd CPU % | **80–100%** | ~5% | Key exchange saturates CPU |
+| HTTP Error Rate | **0%** | 0% | No errors — this is the trap |
+| HTTP Response Code | **200** | 200 | Responses succeed, just slow |
+
+> **Key insight:** The bottom two panels (Error Rate + Response Code) stay
+> green the entire time. The degradation is only visible in TLS Handshake
+> Latency and httpd CPU. An SRE watching only error-based alerts would
+> see "everything is fine" while 50% of users wait 1–2 seconds per request.
+
+#### Grafana metric queries
+
+| Panel | PromQL |
+|-------|--------|
+| TLS Handshake Latency | `probe_http_duration_seconds{phase="tls"}` |
+| httpd CPU % | (node_exporter or process_exporter based) |
+| HTTP Error Rate | (derived from probe or access log metrics) |
+| HTTP Response Code | (probe_http_status_code or similar) |
 
 If SSH'ing directly into VM #1 for manual proof:
 
@@ -280,7 +304,7 @@ After rollback, TLS handshake drops from 1.5s back to 0.015s.
 | 1a | **Satellite GUI** | Remote Execution: `update-crypto-policies --set FUTURE:CLASSICAL-COMPAT` on **BOTH** VMs |
 | 1a verify | **Laptop** | `ansible-playbook playbooks/run-satellite/01-verify-crypto-policy.yml` |
 | 1b | **AAP GUI** | Launch "IntelliMesh Security Compliance" job, limit: patched |
-| 2 | **Laptop** | `ab -n 5000 -c 50 https://<LB_IP>/api/health` (manual) |
+| 2 | **Laptop** | `ab -n 5000 -c 50 https://10.46.254.38/api/health` (manual) |
 | 3 | **Grafana / SSH** | Observe CPU, TLS latency, session config in dashboards or directly |
 | 4 | **AAP GUI** | Launch "IntelliMesh Rollback" job, limit: patched |
 
