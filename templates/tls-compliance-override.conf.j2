@@ -3,5 +3,7 @@
 # Combined with FUTURE crypto-policy, this forces every HTTPS request
 # to perform a full 3072-bit RSA handshake — creating CPU starvation under load.
 
+Listen 443 https
+
 SSLSessionCache none
 SSLSessionTickets off
