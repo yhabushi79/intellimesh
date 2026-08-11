@@ -14,6 +14,13 @@
         enabled: false
       failed_when: false
 
+    - name: Check if httpd is already installed
+      ansible.builtin.command:
+        cmd: rpm -q httpd mod_ssl openssl crypto-policies
+      register: rpm_check
+      changed_when: false
+      failed_when: false
+
     - name: Install httpd, mod_ssl, and crypto tools
       ansible.builtin.dnf:
         name:
@@ -23,6 +30,7 @@
           - crypto-policies
           - crypto-policies-scripts
         state: present
+      when: rpm_check.rc != 0
 
     - name: Ensure TLS directories exist
       ansible.builtin.file:
