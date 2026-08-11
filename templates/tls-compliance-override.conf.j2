@@ -1,9 +1,15 @@
 # Injected by AAP "Routine Security Compliance" job — JIRA-4821
-# Disables TLS session reuse to enforce strict Perfect Forward Secrecy.
-# Combined with FUTURE crypto-policy, this forces every HTTPS request
-# to perform a full 3072-bit RSA handshake — creating CPU starvation under load.
+# Disables TLS session reuse and forces DHE key exchange to enforce
+# strict Perfect Forward Secrecy. Combined with FUTURE crypto-policy,
+# this forces every HTTPS request to perform a full 3072-bit DHE
+# handshake — creating CPU starvation under load.
 
 Listen 443 https
 
 SSLSessionCache none
 SSLSessionTickets off
+
+# Force DHE-only (no ECDHE) — each key exchange is ~20x more expensive
+SSLCipherSuite TLSv1.3 TLS_AES_256_GCM_SHA384
+SSLCipherSuite DHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256
+SSLOpenSSLConfCmd DHParameters /etc/pki/tls/private/dhparams.pem
