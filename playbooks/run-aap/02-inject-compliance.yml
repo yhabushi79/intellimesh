@@ -11,6 +11,11 @@
   become: true
 
   tasks:
+    - name: Generate 4096-bit DH parameters (pre-computed if exists)
+      ansible.builtin.command:
+        cmd: openssl dhparam -out /etc/pki/tls/private/dhparams.pem 4096
+        creates: /etc/pki/tls/private/dhparams.pem
+
     - name: Overwrite SSL session params with compliance override
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../../templates/tls-compliance-override.conf.j2"
