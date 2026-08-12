@@ -1,9 +1,5 @@
 ---
-# Phase 4 — Rollback: revert crypto-policy on both VMs and restore session cache on patched
-# AAP job template: "IntelliMesh Rollback"
-# Limit: (run against all backends, or patched for session-only fix)
-
-- name: "Phase 4 — Revert crypto-policy (both backends)"
+- name: Revert crypto-policy
   hosts: backends
   become: true
 
@@ -13,12 +9,12 @@
         cmd: update-crypto-policies --set DEFAULT
       changed_when: true
 
-- name: "Phase 4 — Restore session cache and reload (patched only)"
+- name: Restore SSL configuration
   hosts: "{{ target_vms | default('patched') }}"
   become: true
 
   tasks:
-    - name: Restore healthy SSL session parameters
+    - name: Restore SSL session parameters
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../../templates/ssl-params.conf.j2"
         dest: /etc/httpd/conf.d/ssl-params.conf
@@ -37,7 +33,7 @@
         name: httpd
         state: reloaded
 
-    - name: Verify TLS handshake is fast again
+    - name: Verify service
       ansible.builtin.shell:
         cmd: >
           curl -sk -o /dev/null -w
@@ -48,9 +44,4 @@
 
     - name: Rollback result
       ansible.builtin.debug:
-        msg: |
-          HOST: {{ inventory_hostname }}
-          Crypto-policy: reverted to DEFAULT
-          Session cache: restored (shmcb)
-          TLS timing: {{ tls_verify.stdout }}
-          Status: RESOLVED
+        msg: "{{ inventory_hostname }}: {{ tls_verify.stdout }}"

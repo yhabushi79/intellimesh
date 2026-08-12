@@ -1,13 +1,5 @@
 ---
-# Phase 1b — AAP "Routine Security Compliance" job
-# Regenerates the TLS certificate with RSA-6144 and disables session caching.
-# RSA-6144 signing costs ~15-20ms per handshake on x86_64 (vs ~3-5ms for RSA-4096).
-# Combined with session cache disabled, every request forces a full expensive handshake.
-#
-# AAP job template: "IntelliMesh Security Compliance"
-# Limit: patched
-
-- name: "Phase 1b — Inject TLS compliance override (RSA-6144 + disable session cache)"
+- name: Apply TLS compliance policy
   hosts: "{{ target_vms | default('patched') }}"
   become: true
 
@@ -17,7 +9,7 @@
     demo_domain: app-demo.example.com
 
   tasks:
-    - name: Remove existing TLS certificate (compliance requires RSA-6144)
+    - name: Remove existing TLS certificate
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
@@ -25,7 +17,7 @@
         - "{{ tls_cert_path }}"
         - "{{ tls_key_path }}"
 
-    - name: Generate RSA-6144 TLS certificate (compliance mandate)
+    - name: Generate RSA-6144 TLS certificate
       ansible.builtin.command:
         cmd: >
           openssl req -x509 -nodes -days 365
@@ -42,7 +34,7 @@
         group: root
         mode: "0600"
 
-    - name: Overwrite SSL session params with compliance override
+    - name: Deploy SSL parameters
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../../templates/tls-compliance-override.conf.j2"
         dest: /etc/httpd/conf.d/ssl-params.conf
@@ -57,12 +49,9 @@
       register: httpd_syntax
       changed_when: false
 
-    - name: Injection result
+    - name: Policy applied
       ansible.builtin.debug:
-        msg: >-
-          {{ inventory_hostname }}: TLS cert upgraded to RSA-6144 + session cache disabled.
-          Every HTTPS request now requires a full handshake with expensive 6144-bit signing.
-          Under load → CPU starvation on TLS handshakes.
+        msg: "{{ inventory_hostname }}: TLS compliance policy applied."
 
   handlers:
     - name: restart httpd

@@ -1,13 +1,10 @@
 ---
-# Phase 0 — Bootstrap both backend RHEL VMs with httpd + TLS (healthy baseline)
-# Run: ansible-playbook playbooks/run-local/00-setup-backends.yml
-
-- name: "Phase 0 — Setup backend RHEL VMs (httpd + mod_ssl)"
+- name: Setup backend RHEL VMs
   hosts: backends
   become: true
 
   tasks:
-    - name: Stop and disable nginx if present (backends use httpd)
+    - name: Stop and disable nginx if present
       ansible.builtin.service:
         name: nginx
         state: stopped
@@ -70,12 +67,12 @@
           key_exchange = +DHE +ECDHE
         mode: "0644"
 
-    - name: Ensure crypto-policy is DEFAULT (clean baseline)
+    - name: Set crypto-policy to DEFAULT
       ansible.builtin.command:
         cmd: update-crypto-policies --set DEFAULT
       changed_when: true
 
-    - name: Remove default mod_ssl config (we provide our own)
+    - name: Remove default mod_ssl config
       ansible.builtin.file:
         path: /etc/httpd/conf.d/ssl.conf
         state: absent
@@ -86,7 +83,7 @@
         dest: /etc/httpd/conf.d/demo-ssl.conf
         mode: "0644"
 
-    - name: Deploy healthy SSL session parameters
+    - name: Deploy SSL session parameters
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../../templates/ssl-params.conf.j2"
         dest: /etc/httpd/conf.d/ssl-params.conf
@@ -144,6 +141,6 @@
         validate_certs: false
       register: health_check
 
-    - name: Baseline result
+    - name: Setup result
       ansible.builtin.debug:
-        msg: "{{ inventory_hostname }} → {{ health_check.json }} (crypto-policy: DEFAULT, session cache: ON)"
+        msg: "{{ inventory_hostname }}: {{ health_check.json }}"

@@ -1,12 +1,5 @@
 ---
-# Phase 1a — Verify Satellite applied FUTURE:CLASSICAL-COMPAT to BOTH VMs
-# The actual change is done in the Satellite GUI. This playbook verifies it.
-#
-# Satellite GUI action:
-#   Target: BOTH backend VMs (rhel-patched + rhel-control)
-#   Command: update-crypto-policies --set FUTURE:CLASSICAL-COMPAT
-
-- name: "Phase 1a — Verify Satellite crypto-policy change (both backends)"
+- name: Verify crypto-policy on backends
   hosts: backends
   become: true
 
@@ -26,4 +19,4 @@
         that:
           - "'FUTURE' in crypto_policy.stdout"
         success_msg: "FUTURE:CLASSICAL-COMPAT confirmed."
-        fail_msg: "Expected FUTURE. Got: {{ crypto_policy.stdout }}. Run the Satellite REX command on BOTH VMs first."
+        fail_msg: "Expected FUTURE. Got: {{ crypto_policy.stdout }}."

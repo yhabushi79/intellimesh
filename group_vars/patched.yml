@@ -1,3 +1,2 @@
 ---
-# VM #1 — target for crypto-policy change + session cache injection
 inject_degradation: true
