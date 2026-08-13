@@ -1,51 +1,16 @@
+# playbooks/run-aap/agent_execution_slot.yml
 ---
-- name: Remediate TLS Certificate and SSL Parameters Performance Degradation
-  hosts: 10.46.253.221
-  become: true
+# ┌─────────────────────────────────────────────────────────┐
+# │ AGENT EXECUTION SLOT                                     │
+# │ Designated workspace for autonomous agent operations.   │
+# │ Content is overwritten per-task via GitHub MCP.         │
+# │ DO NOT manually edit — agent-managed only.              │
+# └─────────────────────────────────────────────────────────┘
+- name: "Agent Execution Slot - No Active Task"
+  hosts: localhost
+  gather_facts: false
   tasks:
-    - name: Remove oversized RSA-6144 TLS certificate and key
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /etc/pki/tls/certs/demo.crt
-        - /etc/pki/tls/private/demo.key
-
-    - name: Generate standard RSA-2048 TLS certificate
-      ansible.builtin.command: >-
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048
-        -keyout /etc/pki/tls/private/demo.key
-        -out /etc/pki/tls/certs/demo.crt
-        -subj "/CN=app-demo.example.com"
-      args:
-        creates: /etc/pki/tls/certs/demo.crt
-
-    - name: Set private key permissions
-      ansible.builtin.file:
-        path: /etc/pki/tls/private/demo.key
-        owner: root
-        group: root
-        mode: '0600'
-
-    - name: Set certificate permissions
-      ansible.builtin.file:
-        path: /etc/pki/tls/certs/demo.crt
-        owner: root
-        group: root
-        mode: '0644'
-
-    - name: Remove custom SSL parameters override
-      ansible.builtin.file:
-        path: /etc/httpd/conf.d/ssl-params.conf
-        state: absent
-
-    - name: Verify httpd configuration syntax
-      ansible.builtin.command: httpd -t
-      register: httpd_syntax
-      changed_when: false
-
-    - name: Restart httpd service
-      ansible.builtin.service:
-        name: httpd
-        state: restarted
-        enabled: true
+    - name: No task loaded
+      ansible.builtin.debug:
+        msg: "This slot has no active task. An agent must populate it before execution."
+      failed_when: true
