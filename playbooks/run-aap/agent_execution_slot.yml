@@ -12,6 +12,11 @@
   hosts: 10.46.253.221
   become: true
   tasks:
+    - name: Remove custom SSL configuration file deployed by Job 115
+      ansible.builtin.file:
+        path: /etc/httpd/conf.d/demo-ssl.conf
+        state: absent
+
     - name: Remove custom SSL parameters file deployed by Job 115
       ansible.builtin.file:
         path: /etc/httpd/conf.d/ssl-params.conf
@@ -26,27 +31,6 @@
       ansible.builtin.file:
         path: /etc/pki/tls/certs/demo.crt
         state: absent
-
-    - name: Test httpd configuration syntax
-      ansible.builtin.command: httpd -t
-      register: httpd_syntax_test
-      ignore_errors: true
-
-    - name: Display httpd syntax test error if failed
-      ansible.builtin.debug:
-        var: httpd_syntax_test
-      when: httpd_syntax_test.rc != 0
-
-    - name: Check httpd systemd status if syntax test failed
-      ansible.builtin.command: journalctl -u httpd.service -n 30 --no-pager
-      register: httpd_journal
-      when: httpd_syntax_test.rc != 0
-      ignore_errors: true
-
-    - name: Display journalctl logs for httpd
-      ansible.builtin.debug:
-        var: httpd_journal.stdout_lines
-      when: httpd_syntax_test.rc != 0
 
 - name: Restart Web Services on Affected Nodes
   hosts: 10.46.250.70, 10.46.253.221
