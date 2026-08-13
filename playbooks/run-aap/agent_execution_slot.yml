@@ -68,13 +68,10 @@
       failed_when: key_bits_check.rc != 0
 
     - name: Validate - direct TLS handshake on Node 2
-      ansible.builtin.command:
-        cmd: >
-          openssl s_client -connect 10.46.253.221:443
-          -servername app-demo.example.com
+      ansible.builtin.shell:
+        cmd: "openssl s_client -connect 10.46.253.221:443 -servername app-demo.example.com < /dev/null"
       register: openssl_check
       changed_when: false
-      stdin: ""
       failed_when: openssl_check.rc != 0
 
     - name: Validate - payment API via Nginx LB responds with 200 OK
