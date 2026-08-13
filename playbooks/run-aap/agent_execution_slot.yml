@@ -1,42 +1,16 @@
+# playbooks/run-aap/agent_execution_slot.yml
 ---
-- name: Revert System Crypto Policy on Affected Nodes
-  hosts: 10.46.250.70, 10.46.253.221
-  become: true
+# ┌─────────────────────────────────────────────────────────┐
+# │ AGENT EXECUTION SLOT                                     │
+# │ Designated workspace for autonomous agent operations.   │
+# │ Content is overwritten per-task via GitHub MCP.         │
+# │ DO NOT manually edit — agent-managed only.              │
+# └─────────────────────────────────────────────────────────┘
+- name: "Agent Execution Slot - No Active Task"
+  hosts: localhost
+  gather_facts: false
   tasks:
-    - name: Revert system crypto policy to DEFAULT
-      ansible.builtin.command: update-crypto-policies --set DEFAULT
-      register: crypto_policy_result
-      changed_when: crypto_policy_result.rc == 0
-
-- name: Restore TLS and SSL Configuration Baseline on Node 2
-  hosts: 10.46.253.221
-  become: true
-  tasks:
-    - name: Remove custom SSL configuration file deployed by Job 115
-      ansible.builtin.file:
-        path: /etc/httpd/conf.d/demo-ssl.conf
-        state: absent
-
-    - name: Remove custom SSL parameters file deployed by Job 115
-      ansible.builtin.file:
-        path: /etc/httpd/conf.d/ssl-params.conf
-        state: absent
-
-    - name: Remove non-compliant 6144-bit RSA private key
-      ansible.builtin.file:
-        path: /etc/pki/tls/private/demo.key
-        state: absent
-
-    - name: Remove non-compliant 6144-bit RSA certificate
-      ansible.builtin.file:
-        path: /etc/pki/tls/certs/demo.crt
-        state: absent
-
-- name: Restart Web Services on Affected Nodes
-  hosts: 10.46.250.70, 10.46.253.221
-  become: true
-  tasks:
-    - name: Restart httpd service to apply restored baseline configuration
-      ansible.builtin.service:
-        name: httpd
-        state: restarted
+    - name: No task loaded
+      ansible.builtin.debug:
+        msg: "This slot has no active task. An agent must populate it before execution."
+      failed_when: true
