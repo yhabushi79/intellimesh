@@ -3,7 +3,7 @@
   hosts: 10.46.250.70, 10.46.253.221
   become: true
   tasks:
-    - name: Revert crypto policy to DEFAULT
+    - name: Revert system crypto policy to DEFAULT
       ansible.builtin.command: update-crypto-policies --set DEFAULT
       register: crypto_policy_result
       changed_when: crypto_policy_result.rc == 0
@@ -26,6 +26,33 @@
       ansible.builtin.file:
         path: /etc/pki/tls/certs/demo.crt
         state: absent
+
+    - name: Restore default SSLCertificateFile reference in httpd configuration
+      ansible.builtin.replace:
+        path: /etc/httpd/conf.d/ssl.conf
+        regexp: 'demo\.crt'
+        replace: 'localhost.crt'
+      ignore_errors: true
+
+    - name: Restore default SSLCertificateKeyFile reference in httpd configuration
+      ansible.builtin.replace:
+        path: /etc/httpd/conf.d/ssl.conf
+        regexp: 'demo\.key'
+        replace: 'localhost.key'
+      ignore_errors: true
+
+    - name: Check if default localhost certificate exists
+      ansible.builtin.stat:
+        path: /etc/pki/tls/certs/localhost.crt
+      register: localhost_crt_stat
+
+    - name: Generate standard 2048-bit localhost certificate and key if missing
+      ansible.builtin.command: >
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048
+        -keyout /etc/pki/tls/private/localhost.key
+        -out /etc/pki/tls/certs/localhost.crt
+        -subj "/CN=localhost"
+      when: not localhost_crt_stat.stat.exists
 
 - name: Restart Web Services on Affected Nodes
   hosts: 10.46.250.70, 10.46.253.221
