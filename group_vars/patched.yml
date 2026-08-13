@@ -1,3 +1,2 @@
 ---
-# These hosts get the legacy SSL hardening template (Phase 2)
-apply_legacy_cipher_pin: true
+inject_degradation: true

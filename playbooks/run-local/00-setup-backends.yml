@@ -1,0 +1,146 @@
+---
+- name: Setup backend RHEL VMs
+  hosts: backends
+  become: true
+
+  tasks:
+    - name: Stop and disable nginx if present
+      ansible.builtin.service:
+        name: nginx
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Check if httpd is already installed
+      ansible.builtin.command:
+        cmd: rpm -q httpd mod_ssl openssl crypto-policies
+      register: rpm_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install httpd, mod_ssl, and crypto tools
+      ansible.builtin.dnf:
+        name:
+          - httpd
+          - mod_ssl
+          - openssl
+          - crypto-policies
+          - crypto-policies-scripts
+        state: present
+      when: rpm_check.rc != 0
+
+    - name: Ensure TLS directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /etc/pki/tls/certs
+        - /etc/pki/tls/private
+
+    - name: Generate self-signed TLS certificate (RSA 4096)
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509 -nodes -days 365
+          -newkey rsa:4096
+          -keyout {{ tls_key_path }}
+          -out {{ tls_cert_path }}
+          -subj "/CN={{ demo_domain }}"
+
+    - name: Set key file permissions
+      ansible.builtin.file:
+        path: "{{ tls_key_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Restore SELinux context on TLS files
+      ansible.builtin.command:
+        cmd: restorecon -v {{ tls_cert_path }} {{ tls_key_path }}
+      changed_when: false
+      failed_when: false
+
+    - name: Deploy CLASSICAL-COMPAT crypto subpolicy module
+      ansible.builtin.copy:
+        dest: /etc/crypto-policies/policies/modules/CLASSICAL-COMPAT.pmod
+        content: |
+          key_exchange = +DHE +ECDHE
+        mode: "0644"
+
+    - name: Set crypto-policy to DEFAULT
+      ansible.builtin.command:
+        cmd: update-crypto-policies --set DEFAULT
+      changed_when: true
+
+    - name: Remove default mod_ssl config
+      ansible.builtin.file:
+        path: /etc/httpd/conf.d/ssl.conf
+        state: absent
+
+    - name: Deploy backend SSL vhost
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/backend-ssl-vhost.conf.j2"
+        dest: /etc/httpd/conf.d/demo-ssl.conf
+        mode: "0644"
+
+    - name: Deploy SSL session parameters
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/ssl-params.conf.j2"
+        dest: /etc/httpd/conf.d/ssl-params.conf
+        mode: "0644"
+
+    - name: Ensure CGI directory exists
+      ansible.builtin.file:
+        path: /var/www/cgi-bin/api
+        state: directory
+        mode: "0755"
+
+    - name: Deploy health API endpoint
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/api-health.sh.j2"
+        dest: /var/www/cgi-bin/api/health
+        mode: "0755"
+
+    - name: Deploy payments API endpoint
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/api-payments.sh.j2"
+        dest: /var/www/cgi-bin/api/payments
+        mode: "0755"
+
+    - name: Validate httpd configuration
+      ansible.builtin.command:
+        cmd: httpd -t
+      register: httpd_test
+      changed_when: false
+
+    - name: Fail if httpd config is broken
+      ansible.builtin.fail:
+        msg: "httpd -t failed: {{ httpd_test.stderr }}"
+      when: httpd_test.rc != 0
+
+    - name: Enable and start httpd
+      ansible.builtin.service:
+        name: httpd
+        state: restarted
+        enabled: true
+
+    - name: Open firewall for HTTPS
+      ansible.builtin.shell: |
+        if systemctl is-active --quiet firewalld; then
+          firewall-cmd --permanent --add-port=443/tcp
+          firewall-cmd --reload
+        fi
+      args:
+        executable: /bin/bash
+      failed_when: false
+      changed_when: false
+
+    - name: Verify HTTPS endpoint
+      ansible.builtin.uri:
+        url: "https://localhost/api/health"
+        validate_certs: false
+      register: health_check
+
+    - name: Setup result
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ health_check.json }}"

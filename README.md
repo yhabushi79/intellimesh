@@ -1,19 +1,34 @@
-# IntelliMesh Demo — Cascading Configuration Conflict
+# IntelliMesh
 
-Satellite hardens crypto on **both** VMs. AAP applies a legacy SSL pin on
-**patched only**. TLS breaks only on patched — the control host proves the
-failure is at the intersection of the two systems.
-
-Lab secrets: `POC_VM_INVENTORY.md` (private).
+Infrastructure management exercise for a load-balanced RHEL environment.
 
 ---
 
-## Lab VMs (2 RHEL)
+## Architecture
 
-| Name | Group | IP | Satellite | AAP legacy pin | Result |
-|------|-------|-----|-----------|----------------|--------|
-| `rhel-patched` | `patched` | `10.46.253.221` | yes | yes | **breaks** |
-| `rhel-control` | `control` | `10.46.250.70` | yes | no | **healthy** |
+```
+                    ┌──────────────────────────────┐
+  Client ────────▶ │  LB VM (nginx stream proxy)  │
+                   │  TCP passthrough :443         │
+                   └──────────────┬────────────────┘
+                                  │
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+          ┌──────────────────┐       ┌──────────────────┐
+          │ VM #1 (patched)  │       │ VM #2 (control)  │
+          │ httpd :443       │       │ httpd :443       │
+          └──────────────────┘       └──────────────────┘
+```
+
+---
+
+## Lab VMs
+
+| Name | Role | IP | Service |
+|------|------|----|---------|
+| `rhel-patched` | Backend | `10.46.253.221` | httpd |
+| `rhel-control` | Backend | `10.46.250.70` | httpd |
+| `rhel-lb` | Load balancer | `10.46.254.38` | nginx stream |
 
 | Platform | URL |
 |----------|-----|
@@ -22,147 +37,167 @@ Lab secrets: `POC_VM_INVENTORY.md` (private).
 
 ---
 
-## Playbook layout
+## Prerequisites
 
-```
-playbooks/
-├── run-local/          # laptop Ansible
-│   ├── 00-setup-hosts.yml
-│   ├── 03-verify-quiet.yml
-│   ├── 04-trigger-failure.yml
-│   └── 05-investigate.yml
-├── run-satellite/      # Satellite GUI + local verify
-│   ├── README.md       # GUI steps (Phase 1)
-│   └── 01-verify-crypto-policy.yml
-└── run-aap/            # imported into AAP; launch from AAP UI
-    ├── 02-post-patch.yml
-    └── 07-remediate.yml
-```
-
-| Folder | Who runs it |
-|--------|-------------|
-| `run-local/` | You, with `ansible-playbook` |
-| `run-satellite/` | You do the change in **Satellite GUI**; verify playbook is local |
-| `run-aap/` | **AAP** job templates (UI launch) |
-
----
-
-## Phase flow
-
-### Phase 0 — Setup (`run-local`)
-
-| | |
-|--|--|
-| **System** | Laptop |
-| **Targets** | both VMs |
-| **Command** | `ansible-playbook playbooks/run-local/00-setup-hosts.yml` |
-| **Result** | nginx + TLS; crypto-policy `DEFAULT` |
-
----
-
-### Phase 1 — Crypto change (`run-satellite`)
-
-| | |
-|--|--|
-| **System** | **Satellite GUI** |
-| **Targets** | both VMs |
-| **Action** | Follow `playbooks/run-satellite/README.md` |
-| **Verify** | `ansible-playbook playbooks/run-satellite/01-verify-crypto-policy.yml` |
-| **Result** | both hosts = `FUTURE` |
-
-Satellite GUI command:
+### Load Balancer VM (nginx TCP stream proxy)
 
 ```bash
-update-crypto-policies --set FUTURE && update-crypto-policies --show
+dnf install -y nginx nginx-mod-stream
+
+cat > /etc/nginx/nginx.conf <<'EOF'
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+stream {
+    upstream backend_pool {
+        server 10.46.253.221:443;
+        server 10.46.250.70:443;
+    }
+
+    server {
+        listen 443;
+        proxy_pass backend_pool;
+    }
+}
+EOF
+
+systemctl enable --now nginx
+firewall-cmd --permanent --add-port=443/tcp && firewall-cmd --reload
 ```
 
 ---
 
-### Phase 2 — Legacy SSL pin (`run-aap`)
+## Execution
+
+### Phase 0 — Setup backends
 
 | | |
-|--|--|
-| **System** | **AAP UI** |
-| **Targets** | `rhel-patched` only |
-| **Action** | Job template → `playbooks/run-aap/02-post-patch.yml`, limit `patched` |
-| **Result** | legacy cipher pin on patched; control untouched |
+|---|---|
+| **Run from** | Your laptop |
+| **Command** | `ansible-playbook playbooks/run-local/00-setup-backends.yml` |
+| **Targets** | Both backend VMs |
 
 ---
 
-### Phase 3 — Quiet check (`run-local`)
-
-```bash
-ansible-playbook playbooks/run-local/03-verify-quiet.yml
-```
-
-Targets: both. Looks fine; conflict is latent on patched.
-
----
-
-### Phase 4 — Failure surfaces (`run-local`)
-
-```bash
-ansible-playbook playbooks/run-local/04-trigger-failure.yml
-```
-
-Probes both. Patched TLS fails; control OK.
-
----
-
-### Phase 5–6 — Investigate (`run-local` or UnifAI)
-
-```bash
-ansible-playbook playbooks/run-local/05-investigate.yml
-```
-
-Compares patched vs control. Prefer UnifAI + Satellite/AAP MCP for the agent story.
-
----
-
-### Phase 7 — Remediate (`run-aap`)
+### Phase 1a — Satellite: Apply crypto-policy
 
 | | |
-|--|--|
-| **System** | **AAP UI** |
-| **Targets** | `rhel-patched` only |
-| **Action** | Job template → `playbooks/run-aap/07-remediate.yml`, limit `patched` |
-| **Result** | pin removed; TLS restored |
+|---|---|
+| **Run from** | Satellite GUI (https://10.46.253.59/) |
+| **Target** | Both backend VMs |
+
+Steps in Satellite:
+1. Open **Hosts** → select both RHEL VMs
+2. Click **Schedule Remote Execution**
+3. Job template: **Run Command - Script Default**
+4. Command: `update-crypto-policies --set FUTURE:CLASSICAL-COMPAT`
+5. Submit
+
+Verify:
+
+```bash
+ansible-playbook playbooks/run-satellite/01-verify-crypto-policy.yml
+```
 
 ---
 
-## Quick reference
+### Phase 1b — AAP: Apply TLS compliance policy
 
-| Phase | Folder | System | Targets | Outcome |
-|-------|--------|--------|---------|---------|
-| 0 | `run-local` | Laptop | both | Baseline |
-| 1 | `run-satellite` | Satellite GUI | both | `FUTURE` |
-| 2 | `run-aap` | AAP UI | patched | Legacy pin |
-| 3 | `run-local` | Laptop | both | Looks quiet |
-| 4 | `run-local` | Laptop | probe both | Patched fails |
-| 5–6 | `run-local` | Laptop / UnifAI | both | Root cause |
-| 7 | `run-aap` | AAP UI | patched | Fixed |
+| | |
+|---|---|
+| **Run from** | AAP GUI (https://10.46.253.112/) |
+| **Target** | `rhel-patched` only |
+
+Steps in AAP:
+1. Open **Templates** → launch **IntelliMesh Security Compliance**
+2. Playbook: `playbooks/run-aap/02-inject-compliance.yml`
+3. Limit: `patched`
 
 ---
 
-## AAP job templates
+### Phase 2 — Load test
 
-| Template name | Playbook | Limit |
-|---------------|----------|-------|
-| IntelliMesh Post-Patch | `playbooks/run-aap/02-post-patch.yml` | `patched` |
-| IntelliMesh Remediate | `playbooks/run-aap/07-remediate.yml` | `patched` |
+| | |
+|---|---|
+| **Run from** | Your laptop |
+| **Target** | Load balancer IP |
+
+```bash
+hey -z 120s -c 200 -disable-keepalive https://10.46.254.38/api/payments
+```
+
+---
+
+### Phase 3 — Observe
+
+| | |
+|---|---|
+| **Run from** | Grafana dashboards or SSH |
+
+---
+
+### Phase 4 — Rollback
+
+| | |
+|---|---|
+| **Run from** | AAP GUI (https://10.46.253.112/) |
+| **Target** | `rhel-patched` only |
+
+Steps in AAP:
+1. Open **Templates** → launch **IntelliMesh Rollback**
+2. Playbook: `playbooks/run-aap/07-rollback.yml`
+3. Limit: `patched`
+
+---
+
+## AAP Job Templates
+
+| Template | Playbook | Limit | Credential |
+|----------|----------|-------|------------|
+| IntelliMesh Security Compliance | `playbooks/run-aap/02-inject-compliance.yml` | `patched` | Machine (root + password) |
+| IntelliMesh Rollback | `playbooks/run-aap/07-rollback.yml` | `patched` | Machine (root + password) |
+
+---
+
+## File layout
+
+```
+intelliMesh/
+├── README.md
+├── ansible.cfg
+├── inventory/
+│   └── hosts.yml
+├── group_vars/
+│   ├── all.yml
+│   ├── patched.yml
+│   └── control.yml
+├── templates/
+│   ├── backend-ssl-vhost.conf.j2
+│   ├── ssl-params.conf.j2
+│   ├── tls-compliance-override.conf.j2
+│   ├── api-health.sh.j2
+│   └── api-payments.sh.j2
+└── playbooks/
+    ├── run-local/
+    │   └── 00-setup-backends.yml
+    ├── run-satellite/
+    │   └── 01-verify-crypto-policy.yml
+    └── run-aap/
+        ├── 02-inject-compliance.yml
+        └── 07-rollback.yml
+```
 
 ---
 
 ## Reset
 
 ```bash
-ansible app_hosts -m command -a "update-crypto-policies --set DEFAULT" -b
-ansible patched -m file -a "path=/etc/nginx/conf.d/ssl-hardening.conf state=absent" -b
-ansible app_hosts -m service -a "name=nginx state=reloaded" -b
+ansible backends -m command -a "update-crypto-policies --set DEFAULT" -b
+ansible patched -m template -a "src=templates/ssl-params.conf.j2 dest=/etc/httpd/conf.d/ssl-params.conf" -b
+ansible backends -m service -a "name=httpd state=reloaded" -b
 ```
-
----
-
-## Key insight
-
-Neither Satellite nor AAP is wrong alone. The outage exists only on **`rhel-patched`**, where both changes landed.

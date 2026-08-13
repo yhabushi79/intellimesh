@@ -1,0 +1,14 @@
+<VirtualHost *:443>
+    ServerName {{ demo_domain }}
+
+    SSLEngine on
+    SSLCertificateFile {{ tls_cert_path }}
+    SSLCertificateKeyFile {{ tls_key_path }}
+
+    DocumentRoot /var/www/html
+
+    ScriptAlias /api/ /var/www/cgi-bin/api/
+
+    ErrorLog /var/log/httpd/demo_error.log
+    CustomLog /var/log/httpd/demo_access.log combined
+</VirtualHost>

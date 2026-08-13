@@ -1,0 +1,60 @@
+---
+- name: Apply TLS compliance policy
+  hosts: "{{ target_vms | default('patched') }}"
+  become: true
+
+  vars:
+    tls_cert_path: /etc/pki/tls/certs/demo.crt
+    tls_key_path: /etc/pki/tls/private/demo.key
+    demo_domain: app-demo.example.com
+
+  tasks:
+    - name: Remove existing TLS certificate
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ tls_cert_path }}"
+        - "{{ tls_key_path }}"
+
+    - name: Generate RSA-6144 TLS certificate
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509 -nodes -days 365
+          -newkey rsa:6144
+          -keyout {{ tls_key_path }}
+          -out {{ tls_cert_path }}
+          -subj "/CN={{ demo_domain }}"
+      notify: restart httpd
+
+    - name: Set key file permissions
+      ansible.builtin.file:
+        path: "{{ tls_key_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Deploy SSL parameters
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/tls-compliance-override.conf.j2"
+        dest: /etc/httpd/conf.d/ssl-params.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart httpd
+
+    - name: Verify httpd config syntax
+      ansible.builtin.command:
+        cmd: httpd -t
+      register: httpd_syntax
+      changed_when: false
+
+    - name: Policy applied
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: TLS compliance policy applied."
+
+  handlers:
+    - name: restart httpd
+      ansible.builtin.service:
+        name: httpd
+        state: restarted

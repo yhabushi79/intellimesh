@@ -1,3 +1,2 @@
 ---
-# Control group — no legacy template applied
-apply_legacy_cipher_pin: false
+inject_degradation: false
