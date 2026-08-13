@@ -1,16 +1,15 @@
-# playbooks/run-aap/agent_execution_slot.yml
 ---
-# ┌─────────────────────────────────────────────────────────┐
-# │ AGENT EXECUTION SLOT                                     │
-# │ Designated workspace for autonomous agent operations.   │
-# │ Content is overwritten per-task via GitHub MCP.         │
-# │ DO NOT manually edit — agent-managed only.              │
-# └─────────────────────────────────────────────────────────┘
-- name: "Agent Execution Slot - No Active Task"
-  hosts: localhost
-  gather_facts: false
+- name: Remediate Payment Backend Crypto Policy Drift
+  hosts: 10.46.250.70, 10.46.253.221
+  become: true
   tasks:
-    - name: No task loaded
-      ansible.builtin.debug:
-        msg: "This slot has no active task. An agent must populate it before execution."
-      failed_when: true
+    - name: Revert system crypto policy to DEFAULT
+      ansible.builtin.command: update-crypto-policies --set DEFAULT
+      register: update_crypto
+      changed_when: update_crypto.rc == 0
+
+    - name: Restart httpd service
+      ansible.builtin.service:
+        name: httpd
+        state: restarted
+      ignore_errors: true
