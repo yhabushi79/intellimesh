@@ -27,32 +27,26 @@
         path: /etc/pki/tls/certs/demo.crt
         state: absent
 
-    - name: Restore default SSLCertificateFile reference in httpd configuration
-      ansible.builtin.replace:
-        path: /etc/httpd/conf.d/ssl.conf
-        regexp: 'demo\.crt'
-        replace: 'localhost.crt'
+    - name: Test httpd configuration syntax
+      ansible.builtin.command: httpd -t
+      register: httpd_syntax_test
       ignore_errors: true
 
-    - name: Restore default SSLCertificateKeyFile reference in httpd configuration
-      ansible.builtin.replace:
-        path: /etc/httpd/conf.d/ssl.conf
-        regexp: 'demo\.key'
-        replace: 'localhost.key'
+    - name: Display httpd syntax test error if failed
+      ansible.builtin.debug:
+        var: httpd_syntax_test
+      when: httpd_syntax_test.rc != 0
+
+    - name: Check httpd systemd status if syntax test failed
+      ansible.builtin.command: journalctl -u httpd.service -n 30 --no-pager
+      register: httpd_journal
+      when: httpd_syntax_test.rc != 0
       ignore_errors: true
 
-    - name: Check if default localhost certificate exists
-      ansible.builtin.stat:
-        path: /etc/pki/tls/certs/localhost.crt
-      register: localhost_crt_stat
-
-    - name: Generate standard 2048-bit localhost certificate and key if missing
-      ansible.builtin.command: >
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048
-        -keyout /etc/pki/tls/private/localhost.key
-        -out /etc/pki/tls/certs/localhost.crt
-        -subj "/CN=localhost"
-      when: not localhost_crt_stat.stat.exists
+    - name: Display journalctl logs for httpd
+      ansible.builtin.debug:
+        var: httpd_journal.stdout_lines
+      when: httpd_syntax_test.rc != 0
 
 - name: Restart Web Services on Affected Nodes
   hosts: 10.46.250.70, 10.46.253.221
