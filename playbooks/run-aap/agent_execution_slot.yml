@@ -1,81 +1,16 @@
+# playbooks/run-aap/agent_execution_slot.yml
 ---
-- name: Remediate Cryptographic Policy on Node 1
-  hosts: 10.46.250.70
-  become: true
+# ┌─────────────────────────────────────────────────────────┐
+# │ AGENT EXECUTION SLOT                                     │
+# │ Designated workspace for autonomous agent operations.   │
+# │ Content is overwritten per-task via GitHub MCP.         │
+# │ DO NOT manually edit — agent-managed only.              │
+# └─────────────────────────────────────────────────────────┘
+- name: "Agent Execution Slot - No Active Task"
+  hosts: localhost
+  gather_facts: false
   tasks:
-    - name: Revert system crypto policy to DEFAULT
-      ansible.builtin.command: update-crypto-policies --set DEFAULT
-      register: crypto_policy_node1
-      changed_when: "'DEFAULT' not in crypto_policy_node1.stdout"
-
-    - name: Ensure httpd service is restarted and enabled
-      ansible.builtin.service:
-        name: httpd
-        state: restarted
-        enabled: true
-
-    - name: Verify active crypto policy on Node 1
-      ansible.builtin.command: update-crypto-policies --show
-      register: crypto_show_node1
-      changed_when: false
-      failed_when: crypto_show_node1.stdout.strip() != "DEFAULT"
-
-- name: Remediate TLS Certificate, SSL Config, and Crypto Policy on Node 2
-  hosts: 10.46.253.221
-  become: true
-  tasks:
-    - name: Revert system crypto policy to DEFAULT
-      ansible.builtin.command: update-crypto-policies --set DEFAULT
-      register: crypto_policy_node2
-      changed_when: "'DEFAULT' not in crypto_policy_node2.stdout"
-
-    - name: Remove SSL configuration override
-      ansible.builtin.file:
-        path: /etc/httpd/conf.d/ssl-params.conf
-        state: absent
-
-    - name: Generate RSA 2048-bit certificate and key
-      ansible.builtin.command: >
-        openssl req -x509 -nodes -days 365
-        -newkey rsa:2048
-        -keyout /etc/pki/tls/private/demo.key
-        -out /etc/pki/tls/certs/demo.crt
-        -subj "/CN=10.46.253.221"
-
-    - name: Set permissions on TLS private key
-      ansible.builtin.file:
-        path: /etc/pki/tls/private/demo.key
-        mode: '0600'
-        owner: root
-        group: root
-
-    - name: Set permissions on TLS certificate
-      ansible.builtin.file:
-        path: /etc/pki/tls/certs/demo.crt
-        mode: '0644'
-        owner: root
-        group: root
-
-    - name: Restart httpd service
-      ansible.builtin.service:
-        name: httpd
-        state: restarted
-        enabled: true
-
-    - name: Verify active crypto policy on Node 2
-      ansible.builtin.command: update-crypto-policies --show
-      register: crypto_show_node2
-      changed_when: false
-      failed_when: crypto_show_node2.stdout.strip() != "DEFAULT"
-
-    - name: Verify RSA private key size is 2048 bits
-      ansible.builtin.shell: "openssl rsa -in /etc/pki/tls/private/demo.key -text -noout | grep -i '2048 bit'"
-      register: key_bits
-      changed_when: false
-      failed_when: key_bits.rc != 0
-
-    - name: Verify httpd service status
-      ansible.builtin.command: systemctl is-active httpd
-      register: httpd_status
-      changed_when: false
-      failed_when: httpd_status.stdout.strip() != "active"
+    - name: No task loaded
+      ansible.builtin.debug:
+        msg: "This slot has no active task. An agent must populate it before execution."
+      failed_when: true
