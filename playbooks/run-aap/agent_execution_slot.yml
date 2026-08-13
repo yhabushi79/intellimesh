@@ -37,10 +37,18 @@
       changed_when: false
       failed_when: false
 
-    - name: Remove SSL compliance override configuration
-      ansible.builtin.file:
-        path: /etc/httpd/conf.d/ssl-params.conf
-        state: absent
+    - name: Restore baseline SSL parameters configuration
+      ansible.builtin.copy:
+        dest: /etc/httpd/conf.d/ssl-params.conf
+        content: |
+          Listen 443 https
+
+          SSLSessionCache shmcb:/run/httpd/sslcache(512000)
+          SSLSessionCacheTimeout 300
+          SSLSessionTickets on
+        owner: root
+        group: root
+        mode: "0644"
 
     - name: Validate httpd configuration syntax
       ansible.builtin.command:
