@@ -8,6 +8,12 @@
     tls_key_path: "/etc/pki/tls/private/demo.key"
 
   tasks:
+    - name: Ensure system crypto policy is set to DEFAULT
+      ansible.builtin.command:
+        cmd: update-crypto-policies --set DEFAULT
+      register: crypto_policy_res
+      changed_when: "'DEFAULT' not in crypto_policy_res.stdout"
+
     - name: Regenerate RSA 2048-bit TLS key and certificate
       ansible.builtin.command:
         cmd: >
@@ -31,6 +37,12 @@
         group: root
         mode: "0644"
 
+    - name: Restore SELinux context on TLS certificates
+      ansible.builtin.command:
+        cmd: restorecon -v {{ tls_cert_path }} {{ tls_key_path }}
+      changed_when: false
+      failed_when: false
+
     - name: Restore baseline SSL parameters configuration
       ansible.builtin.copy:
         dest: /etc/httpd/conf.d/ssl-params.conf
@@ -43,6 +55,11 @@
         owner: root
         group: root
         mode: "0644"
+
+    - name: Remove custom SSL parameters override file if present
+      ansible.builtin.file:
+        path: /etc/httpd/conf.d/tls-compliance-override.conf
+        state: absent
 
     - name: Validate httpd configuration syntax
       ansible.builtin.command:
