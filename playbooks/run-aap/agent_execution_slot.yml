@@ -38,10 +38,20 @@
         group: root
         mode: "0644"
 
+    - name: Check httpd config
+      ansible.builtin.command: httpd -t
+      register: httpd_test
+      ignore_errors: true
+
+    - name: Debug httpd config
+      ansible.builtin.debug:
+        var: httpd_test.stderr
+
     - name: Restart httpd
       ansible.builtin.service:
         name: httpd
         state: restarted
+      when: httpd_test.rc == 0
 
     - name: Validate - httpd is active
       ansible.builtin.command: systemctl is-active httpd
