@@ -8,11 +8,11 @@
     tls_key_path: /etc/pki/tls/private/demo.key
 
   tasks:
-    - name: Regenerate self-signed TLS certificate with RSA 2048
+    - name: Regenerate self-signed TLS certificate with RSA 4096
       ansible.builtin.command:
         cmd: >
           openssl req -x509 -nodes -days 365
-          -newkey rsa:2048
+          -newkey rsa:4096
           -keyout {{ tls_key_path }}
           -out {{ tls_cert_path }}
           -subj "/CN={{ demo_domain }}"
@@ -23,6 +23,13 @@
         owner: root
         group: root
         mode: "0600"
+
+    - name: Set cert file permissions
+      ansible.builtin.file:
+        path: "{{ tls_cert_path }}"
+        owner: root
+        group: root
+        mode: "0644"
 
     - name: Restore SELinux context on TLS files
       ansible.builtin.command:
@@ -42,24 +49,6 @@
       ansible.builtin.service:
         name: httpd
         state: restarted
-      register: httpd_restart
-      ignore_errors: true
-
-    - name: Get error log if httpd fails
-      ansible.builtin.command: tail -n 50 /var/log/httpd/error_log
-      register: error_out
-      when: httpd_restart.failed
-      ignore_errors: true
-
-    - name: Debug error log
-      ansible.builtin.debug:
-        var: error_out.stdout
-      when: httpd_restart.failed
-
-    - name: Fail if httpd restart failed
-      ansible.builtin.fail:
-        msg: "httpd failed to restart"
-      when: httpd_restart.failed
 
     - name: Validate - httpd is active
       ansible.builtin.command: systemctl is-active httpd
