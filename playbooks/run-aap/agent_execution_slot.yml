@@ -3,10 +3,11 @@
   hosts: all
   become: yes
   tasks:
-    - name: Check error log
-      ansible.builtin.command: tail -n 50 /var/log/httpd/error_log
-      register: error_log
+    - name: Check ssl error log
+      ansible.builtin.command: cat /var/log/httpd/ssl_error_log
+      register: ssl_error_log
+      ignore_errors: true
 
-    - name: Print error log
+    - name: Print ssl error log
       ansible.builtin.debug:
-        var: error_log
+        var: ssl_error_log
