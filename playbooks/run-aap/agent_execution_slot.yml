@@ -3,11 +3,20 @@
   hosts: all
   become: yes
   tasks:
-    - name: Check apache config syntax
-      ansible.builtin.command: apachectl configtest
-      register: apache_configtest
+    - name: Check httpd status
+      ansible.builtin.command: systemctl status httpd.service
+      register: httpd_status
       ignore_errors: true
 
-    - name: Print apache configtest
+    - name: Print httpd status
       ansible.builtin.debug:
-        var: apache_configtest
+        var: httpd_status
+
+    - name: Check journalctl
+      ansible.builtin.command: journalctl -xeu httpd.service --no-pager
+      register: httpd_journal
+      ignore_errors: true
+
+    - name: Print journalctl
+      ansible.builtin.debug:
+        var: httpd_journal
