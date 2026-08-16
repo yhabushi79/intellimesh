@@ -3,10 +3,10 @@
   hosts: all
   become: yes
   tasks:
-    - name: Check certs
-      ansible.builtin.command: ls -laZ /etc/pki/tls/private/demo.key /etc/pki/tls/certs/demo.crt
-      register: certs
+    - name: Check ssl-params.conf
+      ansible.builtin.command: cat /etc/httpd/conf.d/ssl-params.conf
+      register: ssl_params
 
-    - name: Print certs
+    - name: Print ssl-params.conf
       ansible.builtin.debug:
-        var: certs
+        var: ssl_params
