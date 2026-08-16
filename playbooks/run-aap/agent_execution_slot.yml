@@ -3,11 +3,10 @@
   hosts: all
   become: yes
   tasks:
-    - name: Check ssl error log
-      ansible.builtin.command: cat /var/log/httpd/ssl_error_log
-      register: ssl_error_log
-      ignore_errors: true
+    - name: Check demo-ssl.conf
+      ansible.builtin.command: cat /etc/httpd/conf.d/demo-ssl.conf
+      register: demo_ssl
 
-    - name: Print ssl error log
+    - name: Print demo-ssl.conf
       ansible.builtin.debug:
-        var: ssl_error_log
+        var: demo_ssl
