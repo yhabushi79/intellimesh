@@ -1,12 +1,77 @@
 ---
-- name: Remediate TLS Compliance Issue
+- name: Remediate TLS Key Length and SSL Params on Node 2
   hosts: all
-  become: yes
-  tasks:
-    - name: Check ssl-params.conf
-      ansible.builtin.command: cat /etc/httpd/conf.d/ssl-params.conf
-      register: ssl_params
+  become: true
+  vars:
+    demo_domain: "app-demo.example.com"
+    tls_cert_path: "/etc/pki/tls/certs/demo.crt"
+    tls_key_path: "/etc/pki/tls/private/demo.key"
 
-    - name: Print ssl-params.conf
-      ansible.builtin.debug:
-        var: ssl_params
+  tasks:
+    - name: Regenerate RSA 4096-bit TLS key and certificate
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509 -nodes -days 365
+          -newkey rsa:4096
+          -keyout {{ tls_key_path }}
+          -out {{ tls_cert_path }}
+          -subj "/CN={{ demo_domain }}"
+
+    - name: Set permissions on TLS private key
+      ansible.builtin.file:
+        path: "{{ tls_key_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Set permissions on TLS certificate
+      ansible.builtin.file:
+        path: "{{ tls_cert_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Restore SELinux context on TLS certificate and key
+      ansible.builtin.command:
+        cmd: "restorecon -v {{ tls_cert_path }} {{ tls_key_path }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Restore baseline SSL parameters configuration
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/ssl-params.conf.j2"
+        dest: /etc/httpd/conf.d/ssl-params.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Validate httpd configuration syntax
+      ansible.builtin.command:
+        cmd: httpd -t
+      register: httpd_syntax
+      changed_when: false
+
+    - name: Restart httpd service
+      ansible.builtin.service:
+        name: httpd
+        state: restarted
+        enabled: true
+
+    - name: Validate - httpd service is active
+      ansible.builtin.command:
+        cmd: systemctl is-active httpd
+      register: httpd_status
+      changed_when: false
+      failed_when: httpd_status.stdout.strip() != "active"
+
+    - name: Validate - port 443 is listening
+      ansible.builtin.wait_for:
+        port: 443
+        timeout: 10
+
+    - name: Validate - direct HTTPS endpoint
+      ansible.builtin.uri:
+        url: "https://localhost/api/payments"
+        validate_certs: false
+        status_code: 200
+        timeout: 10
