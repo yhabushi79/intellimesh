@@ -45,14 +45,15 @@
       register: httpd_restart
       ignore_errors: true
 
-    - name: Get journalctl if httpd fails
-      ansible.builtin.command: journalctl -xeu httpd.service
-      register: journal_out
+    - name: Get error log if httpd fails
+      ansible.builtin.command: tail -n 50 /var/log/httpd/error_log
+      register: error_out
       when: httpd_restart.failed
+      ignore_errors: true
 
-    - name: Debug journalctl
+    - name: Debug error log
       ansible.builtin.debug:
-        var: journal_out.stdout
+        var: error_out.stdout
       when: httpd_restart.failed
 
     - name: Fail if httpd restart failed
