@@ -3,10 +3,10 @@
   hosts: all
   become: yes
   tasks:
-    - name: Check files in conf.d
-      ansible.builtin.command: ls -la /etc/httpd/conf.d/
-      register: conf_d_files
+    - name: Check error log
+      ansible.builtin.command: tail -n 50 /var/log/httpd/error_log
+      register: error_log
 
-    - name: Print files
+    - name: Print error log
       ansible.builtin.debug:
-        var: conf_d_files
+        var: error_log
