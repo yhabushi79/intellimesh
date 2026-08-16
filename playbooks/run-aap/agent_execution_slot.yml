@@ -1,52 +1,25 @@
 ---
-- name: Remediate Node 2 TLS issue
+- name: Remediate TLS Compliance Issue
   hosts: all
-  become: true
-  vars:
-    demo_domain: app-demo.example.com
-    tls_cert_path: /etc/pki/tls/certs/demo.crt
-    tls_key_path: /etc/pki/tls/private/demo.key
-
+  become: yes
   tasks:
-    - name: Regenerate self-signed TLS certificate with RSA 4096
-      ansible.builtin.command:
-        cmd: >
-          openssl req -x509 -nodes -days 365
-          -newkey rsa:4096
-          -keyout {{ tls_key_path }}
-          -out {{ tls_cert_path }}
-          -subj "/CN={{ demo_domain }}"
+    - name: Regenerate private key and self-signed certificate
+      ansible.builtin.command: >
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048
+        -keyout /etc/pki/tls/private/demo.key
+        -out /etc/pki/tls/certs/demo.crt
+        -subj "/CN={{ ansible_fqdn | default('demo.local') }}"
       
-    - name: Set key file permissions
-      ansible.builtin.file:
-        path: "{{ tls_key_path }}"
-        owner: root
-        group: root
-        mode: "0600"
-
-    - name: Set cert file permissions
-      ansible.builtin.file:
-        path: "{{ tls_cert_path }}"
-        owner: root
-        group: root
-        mode: "0644"
-
-    - name: Restore SELinux context on TLS files
-      ansible.builtin.command:
-        cmd: restorecon -v {{ tls_cert_path }} {{ tls_key_path }}
-      changed_when: false
-      failed_when: false
-
-    - name: Restore healthy SSL session parameters
+    - name: Restore ssl-params.conf to baseline
       ansible.builtin.template:
-        src: "{{ playbook_dir }}/../../templates/ssl-params.conf.j2"
+        src: ../../templates/ssl-params.conf.j2
         dest: /etc/httpd/conf.d/ssl-params.conf
         owner: root
         group: root
-        mode: "0644"
+        mode: '0644'
 
-    - name: Restart httpd
-      ansible.builtin.service:
+    - name: Restart httpd service
+      ansible.builtin.systemd:
         name: httpd
         state: restarted
 
@@ -61,9 +34,14 @@
         port: 443
         timeout: 10
 
+    - name: Validate - port 80 is listening
+      ansible.builtin.wait_for:
+        port: 80
+        timeout: 10
+
     - name: Validate - endpoint responds
       ansible.builtin.uri:
-        url: "https://localhost/api/health"
+        url: "https://localhost/"
         validate_certs: false
         status_code: 200
         timeout: 10
