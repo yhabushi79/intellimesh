@@ -3,20 +3,10 @@
   hosts: all
   become: yes
   tasks:
-    - name: Check httpd status
-      ansible.builtin.command: systemctl status httpd.service
-      register: httpd_status
-      ignore_errors: true
+    - name: Check files in conf.d
+      ansible.builtin.command: ls -la /etc/httpd/conf.d/
+      register: conf_d_files
 
-    - name: Print httpd status
+    - name: Print files
       ansible.builtin.debug:
-        var: httpd_status
-
-    - name: Check journalctl
-      ansible.builtin.command: journalctl -xeu httpd.service --no-pager
-      register: httpd_journal
-      ignore_errors: true
-
-    - name: Print journalctl
-      ansible.builtin.debug:
-        var: httpd_journal
+        var: conf_d_files
