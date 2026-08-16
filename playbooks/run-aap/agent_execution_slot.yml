@@ -3,45 +3,11 @@
   hosts: all
   become: yes
   tasks:
-    - name: Regenerate private key and self-signed certificate
-      ansible.builtin.command: >
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048
-        -keyout /etc/pki/tls/private/demo.key
-        -out /etc/pki/tls/certs/demo.crt
-        -subj "/CN={{ ansible_fqdn | default('demo.local') }}"
-      
-    - name: Restore ssl-params.conf to baseline
-      ansible.builtin.template:
-        src: ../../templates/ssl-params.conf.j2
-        dest: /etc/httpd/conf.d/ssl-params.conf
-        owner: root
-        group: root
-        mode: '0644'
+    - name: Check apache config syntax
+      ansible.builtin.command: apachectl configtest
+      register: apache_configtest
+      ignore_errors: true
 
-    - name: Restart httpd service
-      ansible.builtin.systemd:
-        name: httpd
-        state: restarted
-
-    - name: Validate - httpd is active
-      ansible.builtin.command: systemctl is-active httpd
-      register: svc_check
-      changed_when: false
-      failed_when: svc_check.stdout.strip() != 'active'
-
-    - name: Validate - port 443 is listening
-      ansible.builtin.wait_for:
-        port: 443
-        timeout: 10
-
-    - name: Validate - port 80 is listening
-      ansible.builtin.wait_for:
-        port: 80
-        timeout: 10
-
-    - name: Validate - endpoint responds
-      ansible.builtin.uri:
-        url: "https://localhost/"
-        validate_certs: false
-        status_code: 200
-        timeout: 10
+    - name: Print apache configtest
+      ansible.builtin.debug:
+        var: apache_configtest
