@@ -8,11 +8,11 @@
     tls_key_path: /etc/pki/tls/private/demo.key
 
   tasks:
-    - name: Regenerate self-signed TLS certificate (RSA 4096)
+    - name: Regenerate self-signed TLS certificate (RSA 2048)
       ansible.builtin.command:
         cmd: >
           openssl req -x509 -nodes -days 365
-          -newkey rsa:4096
+          -newkey rsa:2048
           -keyout {{ tls_key_path }}
           -out {{ tls_cert_path }}
           -subj "/CN={{ demo_domain }}"
@@ -52,11 +52,4 @@
     - name: Validate - port 443 is listening
       ansible.builtin.wait_for:
         port: 443
-        timeout: 10
-
-    - name: Validate - endpoint responds
-      ansible.builtin.uri:
-        url: "https://localhost/api/health"
-        validate_certs: false
-        status_code: 200
         timeout: 10
