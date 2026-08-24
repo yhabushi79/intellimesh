@@ -1,0 +1,7 @@
+---
+# Satellite often uses a different login than the backend VMs (e.g. a named
+# admin user that then `sudo bash`'s to root, rather than direct root login).
+# Override with SATELLITE_SSH_USER / SATELLITE_PASSWORD if needed; otherwise
+# falls back to the same root/ANSIBLE_PASSWORD used for the backend VMs.
+ansible_user: "{{ lookup('env', 'SATELLITE_SSH_USER') | default('root', true) }}"
+ansible_password: "{{ lookup('env', 'SATELLITE_PASSWORD') | default(lookup('env', 'ANSIBLE_PASSWORD'), true) }}"

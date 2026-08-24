@@ -1,0 +1,15 @@
+---
+- name: Clean up stale Satellite task/job-invocation leftovers
+  hosts: satellite
+  become: true
+
+  tasks:
+    - name: Remove stopped Foreman tasks and orphaned links/plans/invocations
+      ansible.builtin.command:
+        cmd: foreman-rake foreman_tasks:cleanup TASK_SEARCH='state = stopped' AFTER='0d'
+      register: cleanup_result
+      changed_when: "'Deleted' in cleanup_result.stdout"
+
+    - name: Show cleanup result
+      ansible.builtin.debug:
+        msg: "{{ cleanup_result.stdout_lines }}"

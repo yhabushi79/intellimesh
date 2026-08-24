@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IntelliMesh Console</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=28">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-top">
+      <h1>IntelliMesh Console</h1>
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="tab-demo">Demo Topology</button>
+        <button class="tab-btn" id="tab-btn-workflow" data-tab="tab-workflow">Agent Workflow</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ───────────────────────── Tab 1: Demo topology ───────────────────────── -->
+  <section id="tab-demo" class="tab-panel active">
+    <div class="grid-demo">
+
+      <div class="panel panel-topology">
+        <div class="panel-title">Live Topology</div>
+        <iframe class="topology-frame" src="/topology" title="IntelliMesh topology"></iframe>
+      </div>
+
+      <div class="panel-side-col">
+      <div class="panel panel-side">
+        <div class="panel-title">The Issue</div>
+        <div class="explanation">
+          <p>
+            Two platforms independently manage the same infrastructure. Each one reports
+            <span class="badge badge-green">success</span> — but neither sees the whole picture.
+          </p>
+          <ul>
+            <li><b>Red Hat Satellite</b> enforces a stricter OS crypto policy (<code>FUTURE:CLASSICAL-COMPAT</code>) on both nodes. Reports "Policy applied successfully".</li>
+            <li><b>AAP</b> applies a "TLS compliance fix" to <code>Node 2 (patched)</code> only: a 6144-bit RSA certificate and disabled SSL session caching. Reports "Job completed successfully".</li>
+            <li><b>Result:</b> both platforms report green, all health checks pass, error rate is 0%. But every TLS handshake on Node 2 is ~20x slower — customers see intermittent payment slowness with nothing in the logs pointing at the cause.</li>
+          </ul>
+        </div>
+
+        <div class="status-row" id="status-row">
+          <span class="status-pill status-idle" id="status-pill">Idle</span>
+        </div>
+
+        <ol class="step-list">
+          <li class="step">
+            <div class="step-number-col">
+              <div class="step-number">1</div>
+              <div class="step-line"></div>
+            </div>
+            <div class="step-body">
+              <div class="step-title">Update Satellite Crypto Policy</div>
+              <p class="step-desc">Done from the Satellite portal, like in real life: <b>Hosts</b> → select both RHEL VMs → <b>Schedule Remote Execution</b> → command <code>update-crypto-policies --set FUTURE:CLASSICAL-COMPAT</code>. Once applied, verify it stuck:</p>
+              <div class="step-actions">
+                <a id="link-satellite" class="btn btn-outline" href="#" target="_blank" rel="noopener">Open Satellite Portal ↗</a>
+                <button id="btn-verify-crypto" class="btn btn-secondary btn-small">Verify Policy Applied</button>
+              </div>
+            </div>
+          </li>
+          <li class="step">
+            <div class="step-number-col">
+              <div class="step-number">2</div>
+              <div class="step-line"></div>
+            </div>
+            <div class="step-body">
+              <div class="step-title">Update Security Policy (AAP)</div>
+              <p class="step-desc">Done from the AAP portal: <b>Templates</b> → launch <b>IntelliMesh Security Compliance</b> (playbook <code>02-inject-compliance.yml</code>, limit <code>patched</code>). This is the "TLS compliance fix" that — unseen by Satellite — deploys the oversized cert on Node 2 and causes the slowdown.</p>
+              <a id="link-aap" class="btn btn-outline" href="#" target="_blank" rel="noopener">Open AAP Portal ↗</a>
+            </div>
+          </li>
+          <li class="step">
+            <div class="step-number-col">
+              <div class="step-number">3</div>
+              <div class="step-line"></div>
+            </div>
+            <div class="step-body">
+              <div class="step-title">Observe the Impact</div>
+              <p class="step-desc">Both platforms still report green — the slowdown only shows up in TLS handshake latency on the dashboard.</p>
+              <a id="link-grafana" class="btn btn-outline" href="#" target="_blank" rel="noopener">Open Grafana Dashboard ↗</a>
+            </div>
+          </li>
+          <li class="step">
+            <div class="step-number-col">
+              <div class="step-number">4</div>
+              <div class="step-line"></div>
+            </div>
+            <div class="step-body">
+              <div class="step-title">Let the Multi-Agent System Investigate</div>
+              <p class="step-desc">Switch to the <b>Agent Workflow</b> tab and trigger the multi-agent workflow. It correlates the Satellite and AAP change history via MCP, identifies the root cause, and suggests a remediation — closing the gap neither platform could see on its own.</p>
+              <button id="btn-goto-workflow" class="btn btn-primary">Let Multi-Agent Investigate &amp; Suggest Remediation →</button>
+            </div>
+          </li>
+          <li class="step">
+            <div class="step-number-col">
+              <div class="step-number">5</div>
+            </div>
+            <div class="step-body">
+              <div class="step-title">Revert to Healthy Baseline</div>
+              <p class="step-desc">Runs <code>00-cleanup-satellite-tasks.yml</code> (clears stale/stopped Satellite job leftovers) then <code>00-setup-backends.yml</code> — restores the RSA-4096 cert, correct SSL params, and resets the crypto policy to <code>DEFAULT</code>. Cleans up the environment so it's ready for the next demo run.</p>
+              <button id="btn-revert" class="btn btn-primary">Return to Baseline</button>
+            </div>
+          </li>
+        </ol>
+
+        <details class="password-box">
+          <summary>Ansible SSH password (only if not pre-configured on the server)</summary>
+          <input type="password" id="ansible-password" placeholder="ANSIBLE_PASSWORD" autocomplete="off">
+          <p class="hint">Stored only in this browser tab's memory for this session — never written to disk.</p>
+        </details>
+      </div>
+
+      <div class="panel panel-log">
+        <div class="panel-title console-title">Execution Log</div>
+        <pre id="console-log" class="console-log">No job has run yet.</pre>
+      </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ───────────────────────── Tab 2: Agent workflow ───────────────────────── -->
+  <section id="tab-workflow" class="tab-panel">
+    <div class="grid-workflow">
+
+      <div class="workflow-left-col">
+        <div class="panel panel-run-workflow">
+          <div class="panel-title">Run a Workflow</div>
+
+          <div id="workflow-auth-error" class="alert alert-error hidden"></div>
+
+          <label class="field-label" for="workflow-select">Workflow</label>
+          <div class="row">
+            <select id="workflow-select"><option value="">Loading workflows…</option></select>
+            <button id="btn-refresh-workflows" class="btn btn-outline btn-small">Refresh</button>
+          </div>
+
+          <label class="field-label" for="workflow-prompt">Prompt</label>
+          <textarea id="workflow-prompt" rows="4" placeholder="What should this workflow do?"></textarea>
+
+          <button id="btn-run-workflow" class="btn btn-primary">Start Workflow</button>
+
+          <div class="status-row">
+            <span class="status-pill status-idle" id="workflow-status-pill">Idle</span>
+          </div>
+
+          <p class="hint">
+            Requires a one-time authentication on this machine — the UI reuses the
+            cached session to call the backend directly (no separate credentials needed here).
+          </p>
+        </div>
+
+        <div class="panel panel-topo-workflow">
+          <div class="panel-title">Workflow Topology</div>
+          <div id="topology-empty" class="hint">Select a workflow to see its agent topology.</div>
+          <div id="topology-graph" class="topology-graph hidden">
+            <div id="topology-stage" class="topology-stage">
+              <svg id="topology-edges" class="topology-edges"></svg>
+              <div id="topology-nodes" class="topology-nodes"></div>
+            </div>
+          </div>
+          <div id="topology-legend" class="legend hidden">
+            <div class="legend-item"><div class="legend-swatch" style="border-color:#475569;background:#0f1a1a;"></div>User Query</div>
+            <div class="legend-item"><div class="legend-swatch" style="border-color:#06b6d4;background:#0f1a1c;"></div>Orchestrator</div>
+            <div class="legend-item"><div class="legend-swatch" style="border-color:#7c3aed;background:#150f1a;"></div>Agent</div>
+            <div class="legend-item"><div class="legend-swatch" style="border-color:#F46800;background:#1a180f;"></div>Final Answer</div>
+            <div class="legend-item"><span class="legend-arrow">→</span>Pipeline flow</div>
+            <div class="legend-item"><div class="legend-line" style="background:#06b6d4;opacity:.7;"></div>Agent dispatch</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel panel-result-workflow">
+        <div class="panel-title">Result</div>
+        <div id="workflow-result" class="workflow-result">
+          Run a workflow to see per-agent execution steps, tool calls, and the final answer here.
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=29"></script>
+</body>
+</html>
