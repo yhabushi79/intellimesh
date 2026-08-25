@@ -1,16 +1,94 @@
-# playbooks/run-aap/agent_execution_slot.yml
 ---
-# ┌─────────────────────────────────────────────────────────┐
-# │ AGENT EXECUTION SLOT                                     │
-# │ Designated workspace for autonomous agent operations.   │
-# │ Content is overwritten per-task via GitHub MCP.         │
-# │ DO NOT manually edit — agent-managed only.              │
-# └─────────────────────────────────────────────────────────┘
-- name: "Agent Execution Slot - No Active Task"
-  hosts: localhost
-  gather_facts: false
+- name: Remediate Node 2 TLS certificate key size and SSL parameters
+  hosts: all
+  become: true
+  vars:
+    demo_domain: app-demo.example.com
+    tls_cert_path: /etc/pki/tls/certs/demo.crt
+    tls_key_path: /etc/pki/tls/private/demo.key
+
   tasks:
-    - name: No task loaded
-      ansible.builtin.debug:
-        msg: "This slot has no active task. An agent must populate it before execution."
-      failed_when: true
+    - name: Remove non-baseline compliance override config
+      ansible.builtin.file:
+        path: /etc/httpd/conf.d/tls-compliance-override.conf
+        state: absent
+
+    - name: Regenerate self-signed TLS certificate with RSA-4096
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509 -nodes -days 365
+          -newkey rsa:4096
+          -keyout {{ tls_key_path }}
+          -out {{ tls_cert_path }}
+          -subj "/CN={{ demo_domain }}"
+
+    - name: Set private key permissions
+      ansible.builtin.file:
+        path: "{{ tls_key_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Set certificate permissions
+      ansible.builtin.file:
+        path: "{{ tls_cert_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Restore SELinux context on TLS cert and key
+      ansible.builtin.command:
+        cmd: restorecon -v {{ tls_cert_path }} {{ tls_key_path }}
+      changed_when: false
+      failed_when: false
+
+    - name: Restore baseline SSL session parameters
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/ssl-params.conf.j2"
+        dest: /etc/httpd/conf.d/ssl-params.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Validate httpd configuration syntax
+      ansible.builtin.command:
+        cmd: httpd -t
+      register: httpd_syntax
+      changed_when: false
+
+    - name: Restart httpd service
+      ansible.builtin.service:
+        name: httpd
+        state: restarted
+
+    - name: Validate - httpd is active
+      ansible.builtin.command: systemctl is-active httpd
+      register: svc_check
+      changed_when: false
+      failed_when: svc_check.stdout.strip() != 'active'
+
+    - name: Validate - port 443 is listening
+      ansible.builtin.wait_for:
+        port: 443
+        timeout: 10
+
+    - name: Validate - TLS certificate key size is 4096 bit
+      ansible.builtin.shell:
+        cmd: "openssl x509 -in {{ tls_cert_path }} -text -noout | grep -E 'Public-Key: \\(4096 bit\\)'"
+      register: cert_key_check
+      changed_when: false
+      failed_when: cert_key_check.rc != 0
+
+    - name: Validate - health endpoint responds
+      ansible.builtin.uri:
+        url: "https://localhost/api/health"
+        validate_certs: false
+        status_code: 200
+        timeout: 10
+
+    - name: Validate - payments endpoint responds
+      ansible.builtin.uri:
+        url: "https://localhost/api/payments"
+        validate_certs: false
+        status_code: 200
+        timeout: 10
