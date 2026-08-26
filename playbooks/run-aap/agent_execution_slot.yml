@@ -13,11 +13,13 @@
         path: /etc/httpd/conf.d/tls-compliance-override.conf
         state: absent
 
-    - name: Restore baseline SSL session parameters
+    - name: Restore baseline SSL session parameters and Listen directive
       ansible.builtin.copy:
         dest: /etc/httpd/conf.d/ssl-params.conf
         content: |
           # Global SSL session parameters (healthy baseline)
+
+          Listen 443 https
 
           SSLSessionCache shmcb:/run/httpd/sslcache(512000)
           SSLSessionCacheTimeout 300
