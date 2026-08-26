@@ -1,5 +1,5 @@
 ---
-- name: Remediate Node 2 TLS certificate key size and SSL parameters
+- name: Remediate Node 2 TLS certificate key size, SSL parameters, and crypto policy
   hosts: all
   become: true
   vars:
@@ -8,6 +8,12 @@
     tls_key_path: "/etc/pki/tls/private/demo.key"
 
   tasks:
+    - name: Revert system crypto policy to DEFAULT
+      ansible.builtin.command:
+        cmd: update-crypto-policies --set DEFAULT
+      register: crypto_policy
+      changed_when: crypto_policy.rc == 0
+
     - name: Remove compliance override config if present
       ansible.builtin.file:
         path: /etc/httpd/conf.d/tls-compliance-override.conf
@@ -65,6 +71,13 @@
       ansible.builtin.service:
         name: httpd
         state: restarted
+
+    - name: Validate - crypto policy is DEFAULT
+      ansible.builtin.command:
+        cmd: update-crypto-policies --show
+      register: policy_check
+      changed_when: false
+      failed_when: "'DEFAULT' not in policy_check.stdout"
 
     - name: Validate - httpd is active
       ansible.builtin.command: systemctl is-active httpd
