@@ -1,0 +1,137 @@
+---
+# ── PersistentVolumeClaim — session history survives pod restarts ──────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: intellimesh-data
+  namespace: tag-ai--runtime-int
+  labels:
+    paas.redhat.com/appcode: TAG-001
+  annotations:
+    kubernetes.io/reclaimPolicy: Delete
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: aws-ebs
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# ── Deployment ────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: intellimesh-ui
+  namespace: tag-ai--runtime-int
+  labels:
+    app: intellimesh-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: intellimesh-ui
+  template:
+    metadata:
+      labels:
+        app: intellimesh-ui
+    spec:
+      containers:
+        - name: intellimesh-ui
+          image: images.paas.redhat.com/yhabushi/intellimesh:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5050
+
+          env:
+            # ── UnifAI backend ──────────────────────────────────────────────
+            - name: UNIFAI_MAS_URL
+              value: "http://unifai-multiagent-be-tag-ai--playground2.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
+            - name: UNIFAI_API_PREFIX
+              value: "/api"
+
+            # The full contents of ~/.unifai/session.json (run: cat ~/.unifai/session.json)
+            # The entrypoint script writes this to a file and sets UNIFAI_SESSION_FILE.
+            - name: UNIFAI_SESSION_JSON
+              value: '{"session_cookie": "eyJfcGVybWFuZW50Ijp0cnVlLCJzZXNzaW9uX2lkIjoiZTU0MTlhNzItZThlNC00MDVkLWJlZTYtYjVkNDUxY2U4YThkIn0.ao6drA.JFr8fPSglN4Zftz_Vt7unzdDWzI","expires_at": 1787767372.600983}'
+
+            # ── Polling / timeouts ──────────────────────────────────────────
+            - name: WORKFLOW_POLL_INTERVAL_SECONDS
+              value: "3"
+            - name: WORKFLOW_POLL_TIMEOUT_SECONDS
+              value: "900"
+
+            # ── External service URLs (shown on Demo Topology tab) ──────────
+            - name: GRAFANA_URL
+              value: "http://10.46.254.38:3000/"
+            - name: SATELLITE_URL
+              value: "https://10.46.253.59/"
+            - name: AAP_URL
+              value: "https://10.46.253.112/"
+
+            # ── Ansible (Tab 1) — leave empty to hide the password prompt ───
+            - name: ANSIBLE_PASSWORD
+              value: "Mc10vin!!"
+
+            # ── Flask server ────────────────────────────────────────────────
+            - name: UI_HOST
+              value: "0.0.0.0"
+            - name: UI_PORT
+              value: "5050"
+            - name: UI_DEBUG
+              value: "false"
+
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5050
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: intellimesh-data
+
+---
+# ── Service ───────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: intellimesh-ui
+  namespace: tag-ai--runtime-int
+spec:
+  selector:
+    app: intellimesh-ui
+  ports:
+    - port: 5050
+      targetPort: 5050
+
+---
+# ── Route (OpenShift) — exposes the app via HTTPS ────────────────────────────
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: intellimesh-ui
+  namespace: tag-ai--runtime-int
+spec:
+  to:
+    kind: Service
+    name: intellimesh-ui
+  port:
+    targetPort: 5050
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
