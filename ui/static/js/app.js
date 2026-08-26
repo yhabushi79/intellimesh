@@ -109,9 +109,137 @@ let workflowPollTimer = null;
 let workflowStreamAbort = null;
 let workflowStreamSteps = [];
 let workflowStreamSessionId = null;
+let workflowFinalAnswer = "";
 const workflowExpandedTools = new Set();
 const workflowExpandedToolGroups = new Set();
 const workflowExpandedAgents = new Set();
+
+async function fetchFinalAnswer(sessionId) {
+  try {
+    const res = await fetch(`/api/workflows/session/${encodeURIComponent(sessionId)}/result`);
+    if (!res.ok) return "";
+    const data = await res.json();
+    return data.output || "";
+  } catch { return ""; }
+}
+
+// Clear any leftover localStorage key from previous versions
+try { localStorage.removeItem("im_last_session"); } catch (_) {}
+
+// ── Session history store ───────────────────────────────────────────────
+
+async function persistSession(sessionId, jobId, blueprintId, workflowName, status = "running", output = "", steps = null) {
+  try {
+    const payload = {
+      session_id: sessionId,
+      job_id: jobId,
+      blueprint_id: blueprintId,
+      workflow_name: workflowName,
+      status,
+      output,
+    };
+    if (steps) payload.steps = steps;
+    await fetch("/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (_) { /* non-fatal */ }
+}
+
+async function deleteSession(sessionId) {
+  try { await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }); } catch (_) {}
+}
+
+// ── Sessions history panel ──────────────────────────────────────────────
+
+async function loadSessionsHistory() {
+  const panel = document.getElementById("sessions-list");
+  if (!panel) return;
+  try {
+    const res = await fetch("/api/sessions");
+    if (!res.ok) { panel.innerHTML = '<div class="sessions-empty">No sessions yet.</div>'; return; }
+    const { sessions } = await res.json();
+    if (!sessions.length) { panel.innerHTML = '<div class="sessions-empty">No sessions yet.</div>'; return; }
+    panel.innerHTML = sessions.map((s) => {
+      const date = s.started_at ? new Date(s.started_at).toLocaleString() : "—";
+      const statusClass = s.status === "completed" ? "sess-done" : s.status === "failed" ? "sess-fail" : "sess-run";
+      const statusLabel = (s.status || "running").toUpperCase();
+      const name = escapeHtml(s.workflow_name || s.blueprint_id || "Workflow");
+      return `<div class="session-item" data-session-id="${escapeHtml(s.session_id)}">
+        <div class="session-item-meta">
+          <span class="session-item-name">${name}</span>
+          <span class="session-item-status ${statusClass}">${statusLabel}</span>
+        </div>
+        <div class="session-item-date">${date}</div>
+        ${s.output ? `<div class="session-item-output">${escapeHtml(s.output.slice(0, 120))}${s.output.length > 120 ? "…" : ""}</div>` : ""}
+        <div class="session-item-actions">
+          <button class="btn btn-outline btn-small sess-btn-view" data-session-id="${escapeHtml(s.session_id)}">View</button>
+          <button class="btn btn-outline btn-small sess-btn-delete" data-session-id="${escapeHtml(s.session_id)}">Delete</button>
+        </div>
+      </div>`;
+    }).join("");
+  } catch (_) {
+    panel.innerHTML = '<div class="sessions-empty">Could not load sessions.</div>';
+  }
+}
+
+async function viewSession(sessionId) {
+  workflowStreamSteps = [];
+  workflowStreamSessionId = sessionId;
+  workflowFinalAnswer = "";
+  workflowExpandedTools.clear();
+  workflowExpandedToolGroups.clear();
+  workflowExpandedAgents.clear();
+  if (workflowStreamAbort) workflowStreamAbort.abort();
+  setStatusPill(workflowStatusPill, "running");
+  workflowResult.innerHTML = '<div class="workflow-waiting">Loading session…</div>';
+  document.getElementById("btn-run-workflow").disabled = true;
+  document.getElementById("tab-btn-workflow")?.click();
+
+  // Load stored session data (steps + final answer)
+  try {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`);
+    if (res.ok) {
+      const stored = await res.json();
+      const isDone = stored.status === "completed" || stored.status === "failed";
+
+      if (isDone && stored.steps && stored.steps.length) {
+        workflowStreamSteps = stored.steps;
+        workflowFinalAnswer = stored.output || "";
+        const pill = stored.status === "completed" ? "success" : "failed";
+        setStatusPill(workflowStatusPill, pill);
+        document.getElementById("btn-run-workflow").disabled = false;
+        workflowResult.innerHTML = renderWorkflowResult({
+          status: pill,
+          session_id: sessionId,
+          result: { status: stored.status.toUpperCase(), session_id: sessionId, output: workflowFinalAnswer },
+        });
+        return;
+      }
+
+      if (isDone && !stored.steps) {
+        workflowFinalAnswer = stored.output || "";
+        // No stored steps — try fetching final answer from MAS
+        if (!workflowFinalAnswer) {
+          workflowFinalAnswer = await fetchFinalAnswer(sessionId);
+        }
+        const pill = stored.status === "completed" ? "success" : "failed";
+        setStatusPill(workflowStatusPill, pill);
+        document.getElementById("btn-run-workflow").disabled = false;
+        workflowResult.innerHTML = renderWorkflowResult({
+          status: pill,
+          session_id: sessionId,
+          result: { status: stored.status.toUpperCase(), session_id: sessionId, output: workflowFinalAnswer },
+        });
+        return;
+      }
+    }
+  } catch (_) { /* fall through to live stream */ }
+
+  // Session is still running or not found — subscribe to live stream
+  subscribeWorkflowStream(sessionId);
+}
 
 async function loadWorkflows() {
   workflowSelect.innerHTML = "<option value=''>Loading workflows…</option>";
@@ -122,7 +250,9 @@ async function loadWorkflows() {
 
   if (!res.ok) {
     workflowSelect.innerHTML = "<option value=''>Unavailable</option>";
-    workflowAuthError.textContent = data.error || "Failed to load workflows.";
+    const msgEl = document.getElementById("workflow-auth-error-msg");
+    if (msgEl) msgEl.textContent = data.error || "Failed to load workflows.";
+    else workflowAuthError.textContent = data.error || "Failed to load workflows.";
     workflowAuthError.classList.remove("hidden");
     return;
   }
@@ -142,8 +272,85 @@ async function loadWorkflows() {
   }
 }
 
+// ── UnifAI session refresh modal ────────────────────────────────────────
+
+(function () {
+  const openBtn   = document.getElementById("btn-open-session-refresh");
+  const modal     = document.getElementById("session-refresh-modal");
+  const input     = document.getElementById("session-refresh-input");
+  const submitBtn = document.getElementById("btn-session-refresh-submit");
+  const cancelBtn = document.getElementById("btn-session-refresh-cancel");
+  const status    = document.getElementById("session-refresh-status");
+
+  if (!openBtn) return;
+
+  openBtn.addEventListener("click", () => {
+    input.value = "";
+    status.className = "modal-status hidden";
+    modal.classList.remove("hidden");
+    input.focus();
+  });
+
+  cancelBtn.addEventListener("click", () => modal.classList.add("hidden"));
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+
+  submitBtn.addEventListener("click", async () => {
+    const raw = input.value.trim();
+    if (!raw) {
+      status.textContent = "Paste the session JSON first.";
+      status.className = "modal-status status-err";
+      return;
+    }
+    submitBtn.disabled = true;
+    status.textContent = "Applying…";
+    status.className = "modal-status";
+
+    try {
+      const res = await fetch("/api/unifai-session/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_json: raw }),
+      });
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = { error: text }; }
+
+      if (res.ok) {
+        status.textContent = "Session updated — future calls will use the new cookie.";
+        status.className = "modal-status status-ok";
+        setTimeout(() => modal.classList.add("hidden"), 1800);
+        loadWorkflows();
+      } else {
+        status.textContent = "Error: " + (data.error || res.status + " " + res.statusText);
+        status.className = "modal-status status-err";
+      }
+    } catch (err) {
+      status.textContent = "Network error: " + err.message;
+      status.className = "modal-status status-err";
+    }
+    submitBtn.disabled = false;
+  });
+})();
+
 document.getElementById("btn-refresh-workflows").addEventListener("click", loadWorkflows);
 loadWorkflows();
+loadSessionsHistory();
+
+// Sessions panel interactions (view / delete)
+document.getElementById("sessions-list")?.addEventListener("click", async (e) => {
+  const viewBtn = e.target.closest(".sess-btn-view");
+  const delBtn = e.target.closest(".sess-btn-delete");
+  if (viewBtn) {
+    viewSession(viewBtn.dataset.sessionId);
+  } else if (delBtn) {
+    const sid = delBtn.dataset.sessionId;
+    await deleteSession(sid);
+    loadSessionsHistory();
+  }
+});
 
 workflowResult.addEventListener("click", (e) => {
   const agentBtn = e.target.closest(".agent-step-toggle");
@@ -818,6 +1025,7 @@ document.getElementById("btn-run-workflow").addEventListener("click", async () =
   document.getElementById("btn-run-workflow").disabled = true;
   workflowStreamSteps = [];
   workflowStreamSessionId = null;
+  workflowFinalAnswer = "";
   workflowExpandedTools.clear();
   workflowExpandedToolGroups.clear();
   workflowExpandedAgents.clear();
@@ -837,6 +1045,13 @@ document.getElementById("btn-run-workflow").addEventListener("click", async () =
     return;
   }
 
+  // Save to session history
+  const sessionIdForSave = job.session_id || (job.result && job.result.session_id);
+  const workflowName = workflowSelect.options[workflowSelect.selectedIndex]?.text || blueprintId;
+  if (sessionIdForSave) {
+    await persistSession(sessionIdForSave, job.id, blueprintId, workflowName, "running");
+  }
+
   pollWorkflowJob(job.id);
   if (job.session_id) {
     subscribeWorkflowStream(job.session_id);
@@ -854,8 +1069,7 @@ function isWorkflowResultStep(step) {
   const id = (step.node_id || "").toLowerCase();
   const name = (step.node_name || "").toLowerCase();
   if (id === "user_question_node" || id === "final_answer_node") return false;
-  if (id.includes("user_question") || id.includes("final_answer")) return false;
-  if (name.includes("user question") || name.includes("final answer")) return false;
+  if (id.includes("user_question")) return false;
   if (step.node_type === "input" || step.node_type === "output") return false;
   return true;
 }
@@ -938,6 +1152,7 @@ function subscribeWorkflowStream(sessionId) {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let receivedStreamEnd = false;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -951,7 +1166,20 @@ function subscribeWorkflowStream(sessionId) {
           if (!line.trim()) continue;
           try {
             const event = JSON.parse(line);
-            if (event.type === "stream_end") return;
+            if (event.type === "stream_end") {
+              receivedStreamEnd = true;
+              workflowStreamSteps.forEach((s) => { if (s.status === "running") s.status = "complete"; });
+              if (workflowStreamSessionId) {
+                workflowFinalAnswer = await fetchFinalAnswer(workflowStreamSessionId);
+                await persistSession(workflowStreamSessionId, "", "", "", "completed", workflowFinalAnswer, workflowStreamSteps);
+                loadSessionsHistory();
+              }
+              setStatusPill(workflowStatusPill, "success");
+              document.getElementById("btn-run-workflow").disabled = false;
+              if (workflowPollTimer) { clearInterval(workflowPollTimer); workflowPollTimer = null; }
+              workflowResult.innerHTML = renderWorkflowResult({ status: "success", result: { output: workflowFinalAnswer } });
+              return;
+            }
             if (event.type === "stream_error") {
               console.warn("Stream error:", event.error);
               return;
@@ -962,6 +1190,21 @@ function subscribeWorkflowStream(sessionId) {
             console.warn("Bad stream line:", line, err);
           }
         }
+      }
+
+      // Stream connection closed without an explicit stream_end event.
+      // MAS often just closes the connection when done — treat it as completed.
+      if (!receivedStreamEnd && workflowStreamSteps.length > 0) {
+        workflowStreamSteps.forEach((s) => { if (s.status === "running") s.status = "complete"; });
+        if (workflowStreamSessionId) {
+          workflowFinalAnswer = await fetchFinalAnswer(workflowStreamSessionId);
+          await persistSession(workflowStreamSessionId, "", "", "", "completed", workflowFinalAnswer, workflowStreamSteps);
+          loadSessionsHistory();
+        }
+        setStatusPill(workflowStatusPill, "success");
+        document.getElementById("btn-run-workflow").disabled = false;
+        if (workflowPollTimer) { clearInterval(workflowPollTimer); workflowPollTimer = null; }
+        workflowResult.innerHTML = renderWorkflowResult({ status: "success", result: { output: workflowFinalAnswer } });
       }
     } catch (err) {
       if (err.name !== "AbortError") {
@@ -1232,6 +1475,115 @@ function resolveStepStatus(step) {
   return { card: "running", css: "status-running", label: "Running" };
 }
 
+/**
+ * Lightweight markdown → HTML renderer (no external dependency).
+ * Handles the subset typically produced by LLM agents:
+ * headings, bold, italic, inline code, fenced code blocks,
+ * unordered lists, ordered lists, horizontal rules, and paragraphs.
+ */
+function renderMarkdown(text) {
+  if (!text) return "";
+
+  // Escape a raw string for HTML (used inside code spans/blocks)
+  const esc = (s) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // 1. Protect fenced code blocks (```…```)
+  const codeBlocks = [];
+  text = text.replace(/```([^\n]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    const idx = codeBlocks.push(
+      `<pre class="md-code-block"><code${lang ? ` class="language-${esc(lang.trim())}"` : ""}>${esc(code)}</code></pre>`,
+    ) - 1;
+    return `\x00CODE${idx}\x00`;
+  });
+
+  // 2. Escape remaining HTML characters
+  text = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // 3. Inline code (`…`)
+  text = text.replace(/`([^`]+)`/g, "<code class=\"md-code\">$1</code>");
+
+  // 4. Bold and italic
+  text = text
+    .replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/__(.+?)__/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/_([^_]+)_/g, "<em>$1</em>");
+
+  // 5. Process line by line for headings, lists, hr, paragraphs
+  const lines = text.split("\n");
+  const out = [];
+  let inUl = false;
+  let inOl = false;
+
+  const flushLists = () => {
+    if (inUl) { out.push("</ul>"); inUl = false; }
+    if (inOl) { out.push("</ol>"); inOl = false; }
+  };
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+
+    // Restored code block placeholder
+    if (/^\x00CODE\d+\x00$/.test(line.trim())) {
+      flushLists();
+      const idx = parseInt(line.trim().replace(/\x00CODE(\d+)\x00/, "$1"), 10);
+      out.push(codeBlocks[idx]);
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^[-*_]{3,}$/.test(line.trim())) {
+      flushLists();
+      out.push("<hr class=\"md-hr\">");
+      continue;
+    }
+
+    // Headings
+    const hMatch = line.match(/^(#{1,6})\s+(.+)/);
+    if (hMatch) {
+      flushLists();
+      const level = Math.min(hMatch[1].length + 2, 6); // h3–h6 to stay visually subordinate
+      out.push(`<h${level} class="md-h${level}">${hMatch[2]}</h${level}>`);
+      continue;
+    }
+
+    // Unordered list
+    const ulMatch = line.match(/^(\s*)[*\-+]\s+(.+)/);
+    if (ulMatch) {
+      if (!inUl) { if (inOl) { out.push("</ol>"); inOl = false; } out.push("<ul class=\"md-ul\">"); inUl = true; }
+      out.push(`<li>${ulMatch[2]}</li>`);
+      continue;
+    }
+
+    // Ordered list
+    const olMatch = line.match(/^(\s*)\d+\.\s+(.+)/);
+    if (olMatch) {
+      if (!inOl) { if (inUl) { out.push("</ul>"); inUl = false; } out.push("<ol class=\"md-ol\">"); inOl = true; }
+      out.push(`<li>${olMatch[2]}</li>`);
+      continue;
+    }
+
+    // Blank line — close lists, paragraph break
+    if (!line.trim()) {
+      flushLists();
+      out.push("<br>");
+      continue;
+    }
+
+    // Plain paragraph line
+    flushLists();
+    out.push(`<p class="md-p">${line}</p>`);
+  }
+
+  flushLists();
+  return out.join("\n");
+}
+
 function renderAgentStep(step) {
   const agentKey = step.node_id;
   const expanded = workflowExpandedAgents.has(agentKey);
@@ -1251,10 +1603,8 @@ function renderAgentStep(step) {
   html += "</button>";
 
   html += `<div class="agent-step-body${expanded ? "" : " collapsed"}">`;
-  if (step.text) {
-    html += '<div class="agent-output-label">Output</div>';
-    html += `<pre class="stream-step-text">${escapeHtml(step.text)}</pre>`;
-  }
+
+  // Tool calls first
   if (tools.length) {
     if (orchestrator) {
       html += renderOrchestratorActivity(step);
@@ -1262,6 +1612,13 @@ function renderAgentStep(step) {
       html += renderGroupedToolCallsGroup(step);
     }
   }
+
+  // Then the agent's textual output, rendered as markdown
+  if (step.text) {
+    html += '<div class="agent-output-label">Output</div>';
+    html += `<div class="stream-step-text md-output">${renderMarkdown(step.text)}</div>`;
+  }
+
   html += "</div></div>";
   return html;
 }
@@ -1274,9 +1631,9 @@ function renderWorkflowResult(job) {
   let html = "";
 
   const sessionId = r.session_id || job.session_id || workflowStreamSessionId;
+  const st = r.status || (job.status === "running" ? "RUNNING" : job.status === "success" ? "COMPLETED" : "");
   if (sessionId || job.status === "running") {
-    const st = r.status || (job.status === "running" ? "RUNNING" : "?");
-    html += `<div class="workflow-meta">Session: ${escapeHtml(sessionId || "…")} · Status: ${escapeHtml(st)}</div>`;
+    html += `<div class="workflow-meta">Session: ${escapeHtml(sessionId || "…")} · Status: ${escapeHtml(st || "?")}</div>`;
   }
 
   if (r.poll_handoff) {
@@ -1294,10 +1651,11 @@ function renderWorkflowResult(job) {
     html += '<div class="workflow-waiting">Listening for agent activity… agents may run in parallel.</div>';
   }
 
-  if (r.output && job.status === "success") {
+  const finalText = r.output || workflowFinalAnswer;
+  if (finalText && (job.status === "success" || st === "COMPLETED")) {
     html += '<div class="workflow-final">';
     html += '<div class="workflow-final-label">Final Answer</div>';
-    html += `<pre class="workflow-final-text">${escapeHtml(r.output)}</pre>`;
+    html += `<div class="workflow-final-text md-output">${renderMarkdown(finalText)}</div>`;
     html += "</div>";
   }
 
@@ -1314,11 +1672,31 @@ function pollWorkflowJob(jobId) {
 
   workflowPollTimer = setInterval(async () => {
     const res = await fetch(`/api/workflows/jobs/${jobId}`);
+    if (res.status === 404) {
+      // Server restarted — job registry is gone but MAS stream is still live.
+      // Keep streaming; we'll detect completion via stream_end event.
+      return;
+    }
     const job = await res.json();
+
+    // If we now learn the session_id for the first time, save it
+    const sid = job.session_id || (job.result && job.result.session_id);
+    if (sid && !workflowStreamSessionId) {
+      const wfName = workflowSelect.options[workflowSelect.selectedIndex]?.text || "";
+      await persistSession(sid, jobId, workflowSelect.value || "", wfName, "running");
+    }
 
     if (job.status === "success" && isWorkflowTerminal(job)) {
       clearInterval(workflowPollTimer);
+      workflowPollTimer = null;
       if (workflowStreamAbort) workflowStreamAbort.abort();
+      // Update session file with completed status + output
+      const output = (job.result || {}).output || "";
+      if (workflowStreamSessionId) {
+        await persistSession(workflowStreamSessionId, jobId, workflowSelect.value || "",
+          workflowSelect.options[workflowSelect.selectedIndex]?.text || "", "completed", output);
+        loadSessionsHistory();
+      }
       setStatusPill(workflowStatusPill, "success");
       document.getElementById("btn-run-workflow").disabled = false;
       workflowResult.innerHTML = renderWorkflowResult(job);
@@ -1327,7 +1705,13 @@ function pollWorkflowJob(jobId) {
       workflowResult.innerHTML = renderWorkflowResult({ ...job, status: "running" });
     } else if (job.status === "failed") {
       clearInterval(workflowPollTimer);
+      workflowPollTimer = null;
       if (workflowStreamAbort) workflowStreamAbort.abort();
+      if (workflowStreamSessionId) {
+        await persistSession(workflowStreamSessionId, jobId, workflowSelect.value || "",
+          workflowSelect.options[workflowSelect.selectedIndex]?.text || "", "failed");
+        loadSessionsHistory();
+      }
       setStatusPill(workflowStatusPill, "failed");
       document.getElementById("btn-run-workflow").disabled = false;
       workflowResult.textContent = "Error: " + (job.error || "workflow failed");

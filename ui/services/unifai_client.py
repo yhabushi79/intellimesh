@@ -190,14 +190,12 @@ _RESULT_EXCLUDED_NODE_IDS = frozenset({"user_question_node", "final_answer_node"
 
 
 def _is_workflow_result_step(node_id: str, display_name: str = "") -> bool:
-    """Input/output topology nodes are shown in topology — not in Result agent list."""
+    """Filter out user-question and final-answer placeholder nodes from agent steps."""
     nid = (node_id or "").lower()
     name = (display_name or "").lower()
     if nid in _RESULT_EXCLUDED_NODE_IDS:
         return False
-    if "user_question" in nid or "final_answer" in nid:
-        return False
-    if "user question" in name or "final answer" in name:
+    if "user_question" in nid or "user question" in name:
         return False
     return True
 

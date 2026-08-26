@@ -1,0 +1,6 @@
+.git/
+.venv/
+ui/data/
+deploy/
+__pycache__/
+*.pyc

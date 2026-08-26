@@ -6,6 +6,7 @@ Tab 2: trigger a UnifAI workflow and show its final result.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from flask import Flask, jsonify, render_template, request, Response, stream_with_context
 
@@ -22,7 +23,9 @@ app = Flask(__name__)
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    resp = Response(render_template("index.html"), mimetype="text/html")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.get("/topology")
@@ -115,6 +118,108 @@ def api_job_status(job_id: str):
     return jsonify(job.to_dict(since=since))
 
 
+# ── UnifAI session refresh (no pod restart needed) ──────────────────────
+
+
+@app.post("/api/unifai-session/refresh")
+def api_unifai_session_refresh():
+    """Overwrite the UnifAI session file with a new one.
+
+    Call this when the session expires — the app reads the file on every
+    request, so the next API call immediately uses the new cookie.
+
+    Body: { "session_json": "<contents of ~/.unifai/session.json>" }
+    """
+    body = request.get_json(silent=True) or {}
+    raw = body.get("session_json", "").strip()
+    if not raw:
+        return jsonify({"error": "session_json is required"}), 400
+    try:
+        data = json.loads(raw)          # validate it's real JSON
+    except json.JSONDecodeError as exc:
+        return jsonify({"error": f"Invalid JSON: {exc}"}), 400
+
+    session_file = config.UNIFAI_SESSION_FILE
+    try:
+        session_file.write_text(json.dumps(data, indent=2))
+    except OSError as exc:
+        return jsonify({"error": f"Could not write session file: {exc}"}), 500
+
+    return jsonify({"ok": True, "session_file": str(session_file)})
+
+
+# ── Session history store ────────────────────────────────────────────────
+
+
+def _session_path(session_id: str):
+    return config.SESSIONS_DIR / f"{session_id}.json"
+
+
+@app.post("/api/sessions")
+def api_sessions_create():
+    """Create or update a session record."""
+    body = request.get_json(silent=True) or {}
+    session_id = body.get("session_id", "").strip()
+    if not session_id:
+        return jsonify({"error": "session_id is required"}), 400
+    path = _session_path(session_id)
+    existing = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text())
+        except Exception:
+            pass
+    existing.update({
+        "session_id": session_id,
+        "job_id": body.get("job_id", existing.get("job_id", "")),
+        "blueprint_id": body.get("blueprint_id", existing.get("blueprint_id", "")),
+        "workflow_name": body.get("workflow_name", existing.get("workflow_name", "")),
+        "status": body.get("status", existing.get("status", "running")),
+        "output": body.get("output", existing.get("output", "")),
+        "started_at": existing.get("started_at") or datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    if "steps" in body:
+        existing["steps"] = body["steps"]
+    path.write_text(json.dumps(existing, indent=2))
+    return jsonify({"ok": True, "session_id": session_id})
+
+
+@app.get("/api/sessions")
+def api_sessions_list():
+    """List all stored sessions, newest first."""
+    sessions = []
+    for f in config.SESSIONS_DIR.glob("*.json"):
+        try:
+            sessions.append(json.loads(f.read_text()))
+        except Exception:
+            pass
+    sessions.sort(key=lambda s: s.get("started_at", ""), reverse=True)
+    return jsonify({"sessions": sessions})
+
+
+@app.get("/api/sessions/<session_id>")
+def api_sessions_get(session_id: str):
+    """Return a single stored session (steps + output)."""
+    path = _session_path(session_id)
+    if not path.exists():
+        return jsonify({"error": "not found"}), 404
+    try:
+        data = json.loads(path.read_text())
+        return jsonify(data)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.delete("/api/sessions/<session_id>")
+def api_sessions_delete(session_id: str):
+    """Delete a session record."""
+    path = _session_path(session_id)
+    if path.exists():
+        path.unlink()
+    return jsonify({"ok": True})
+
+
 # ── Tab 2: UnifAI workflows ──────────────────────────────────────────────
 
 
@@ -163,6 +268,23 @@ def api_workflows_run():
     return jsonify(job.to_dict())
 
 
+@app.get("/api/workflows/jobs/<job_id>/session")
+def api_workflow_job_session(job_id: str):
+    """Return the MAS session_id for a job so the browser can reconnect after a reload."""
+    job = registry.get(job_id)
+    if job is None:
+        return jsonify({"error": "job not found"}), 404
+    session_id = getattr(job, "session_id", None) or (job.result or {}).get("session_id")
+    if not session_id:
+        return jsonify({"error": "no session_id for this job"}), 404
+    return jsonify({
+        "job_id": job_id,
+        "session_id": session_id,
+        "status": job.status,
+        "result_status": (job.result or {}).get("status", ""),
+    })
+
+
 @app.get("/api/workflows/jobs/<job_id>")
 def api_workflow_job_status(job_id: str):
     since = request.args.get("since", default=0, type=int)
@@ -199,6 +321,29 @@ def api_workflow_stream():
     resp.headers["X-Accel-Buffering"] = "no"
     resp.headers["Cache-Control"] = "no-cache"
     return resp
+
+
+@app.get("/api/workflows/session/<session_id>/result")
+def api_workflow_session_result(session_id: str):
+    """Fetch the final answer and status for a completed workflow session from MAS."""
+    try:
+        unifai_client.check_auth()
+        client = unifai_client.UnifAIClient()
+        status = unifai_client._normalize_session_status(client.get_session_status(session_id))
+        output = ""
+        try:
+            chat = client.get_session_chat(session_id)
+            chat_status = unifai_client._normalize_session_status(chat.get("status"))
+            if chat_status in unifai_client.TERMINAL_SESSION_STATUSES:
+                status = chat_status
+            output = unifai_client._extract_chat_output(chat)
+        except Exception:  # noqa: BLE001
+            pass
+        return jsonify({"session_id": session_id, "status": status, "output": output})
+    except UnifAIAuthError as exc:
+        return jsonify({"error": str(exc), "auth_error": True}), 401
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 502
 
 
 if __name__ == "__main__":

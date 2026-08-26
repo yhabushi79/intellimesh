@@ -21,6 +21,12 @@ PLAYBOOK_INJECT_COMPLIANCE = REPO_ROOT / "playbooks" / "run-aap" / "02-inject-co
 
 TOPOLOGY_HTML_PATH = REPO_ROOT / "docs" / "topology.html"
 
+# Persistent data directory — written by the Flask process at runtime.
+DATA_DIR = Path(__file__).resolve().parent / "data"
+DATA_DIR.mkdir(exist_ok=True)
+SESSIONS_DIR = DATA_DIR / "sessions"
+SESSIONS_DIR.mkdir(exist_ok=True)
+
 GRAFANA_URL = os.environ.get(
     "GRAFANA_URL",
     "http://10.46.254.38:3000/d/intellimesh-tls/intellimesh-e28094-tls-observability"

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>IntelliMesh Console</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=28">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=40">
 </head>
 <body>
   <header class="app-header">
@@ -129,7 +129,23 @@
         <div class="panel panel-run-workflow">
           <div class="panel-title">Run a Workflow</div>
 
-          <div id="workflow-auth-error" class="alert alert-error hidden"></div>
+          <div id="workflow-auth-error" class="alert alert-error hidden">
+            <span id="workflow-auth-error-msg"></span>
+            <button id="btn-open-session-refresh" class="btn btn-outline btn-small">Refresh Session</button>
+          </div>
+
+          <div id="session-refresh-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+              <div class="modal-title">Refresh UnifAI Session</div>
+              <p class="modal-hint">Run <code>cat ~/.unifai/session.json</code> on your machine and paste the output below.</p>
+              <textarea id="session-refresh-input" rows="6" placeholder='{"session_cookie": "...", "expires_at": ...}'></textarea>
+              <div class="modal-actions">
+                <button id="btn-session-refresh-submit" class="btn btn-primary">Apply</button>
+                <button id="btn-session-refresh-cancel" class="btn btn-outline">Cancel</button>
+              </div>
+              <div id="session-refresh-status" class="modal-status hidden"></div>
+            </div>
+          </div>
 
           <label class="field-label" for="workflow-select">Workflow</label>
           <div class="row">
@@ -172,16 +188,25 @@
         </div>
       </div>
 
-      <div class="panel panel-result-workflow">
-        <div class="panel-title">Result</div>
-        <div id="workflow-result" class="workflow-result">
-          Run a workflow to see per-agent execution steps, tool calls, and the final answer here.
+      <div class="workflow-right-col">
+        <div class="panel panel-result-workflow">
+          <div class="panel-title">Result</div>
+          <div id="workflow-result" class="workflow-result">
+            Run a workflow to see per-agent execution steps, tool calls, and the final answer here.
+          </div>
+        </div>
+
+        <div class="panel panel-sessions">
+          <div class="panel-title">Session History</div>
+          <div id="sessions-list" class="sessions-list">
+            <div class="sessions-empty">No sessions yet.</div>
+          </div>
         </div>
       </div>
 
     </div>
   </section>
 
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=29"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=42"></script>
 </body>
 </html>
