@@ -59,6 +59,9 @@
         mode: "0644"
       notify: restart httpd
 
+    - name: Flush handlers to apply config before syntax validation
+      ansible.builtin.meta: flush_handlers
+
     - name: Validate httpd configuration syntax
       ansible.builtin.command:
         cmd: httpd -t
