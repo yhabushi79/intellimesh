@@ -1154,12 +1154,13 @@ function processWorkflowStreamEvent(event) {
     }
   } else if (eventType === "tool_result") {
     const callId = data.call_id;
+    const resultOutput = data.output || data.result || data.content || "";
     if (callId) {
       const toolEntry = step.tools.find((t) => t.id === callId);
       if (toolEntry) {
-        toolEntry.output = data.output;
+        toolEntry.output = resultOutput;
       } else {
-        step.tools.push({ id: callId, name: data.tool || "tool", output: data.output });
+        step.tools.push({ id: callId, name: data.tool || "tool", output: resultOutput });
       }
     }
   } else if (eventType === "complete") {
@@ -1423,7 +1424,15 @@ function renderToolBatch(step, batch) {
   if (expanded) {
     html += '<div class="tool-call-details">';
     batch.tools.forEach((tool, i) => {
-      html += `<div class="tool-batch-line">${i + 1}. ${escapeHtml(tool.name)}</div>`;
+      html += `<div class="tool-batch-line"><b>${i + 1}. ${escapeHtml(tool.name)}</b></div>`;
+      if (tool.args) {
+        html += '<div class="tool-call-block"><span class="tool-call-label">Args</span>';
+        html += `<pre>${escapeHtml(formatToolPayload(tool.args))}</pre></div>`;
+      }
+      if (tool.output) {
+        html += '<div class="tool-call-block"><span class="tool-call-label">Output</span>';
+        html += `<pre>${escapeHtml(formatToolPayload(tool.output))}</pre></div>`;
+      }
     });
     html += "</div>";
   }
