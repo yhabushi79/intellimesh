@@ -1,5 +1,5 @@
 ---
-- name: Remediate TLS certificate key size and SSL session cache
+- name: Remediate TLS certificate key size and SSL parameters
   hosts: all
   become: true
 
