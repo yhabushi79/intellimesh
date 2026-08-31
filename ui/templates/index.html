@@ -28,17 +28,16 @@
 
       <div class="panel-side-col">
       <div class="panel panel-side">
-        <div class="panel-title">The Issue</div>
+        <div class="panel-title">Objective</div>
         <div class="explanation">
-          <p>
-            Two platforms independently manage the same infrastructure. Each one reports
-            <span class="badge badge-green">success</span> — but neither sees the whole picture.
-          </p>
+          <p>Show how a multi-agent system (IntelliMesh) can diagnose and fix a problem that no single platform can see on its own. Two separate teams (Satellite and AAP) each made a valid change to the infrastructure. Each change looks fine in isolation. But together, they create a hidden performance problem that only appears under load — and neither team's monitoring catches it.</p>
+          <p><b>Scenario:</b> A payment service runs on two RHEL servers behind a load balancer. Two things happen:</p>
           <ul>
-            <li><b>Red Hat Satellite</b> enforces a stricter OS crypto policy (<code>FUTURE:CLASSICAL-COMPAT</code>) on both nodes. Reports "Policy applied successfully".</li>
-            <li><b>AAP</b> applies a "TLS compliance fix" to <code>Node 2 (patched)</code> only: a 6144-bit RSA certificate and disabled SSL session caching. Reports "Job completed successfully".</li>
-            <li><b>Result:</b> both platforms report green, all health checks pass, error rate is 0%. But every TLS handshake on Node 2 is ~20x slower — customers see intermittent payment slowness with nothing in the logs pointing at the cause.</li>
+            <li>The <b>Satellite</b> team applies a stricter crypto policy (<code>FUTURE:CLASSICAL-COMPAT</code>) to <b>both</b> servers — this raises the minimum TLS key size.</li>
+            <li>The <b>AAP</b> team deploys a TLS compliance fix on <b>one server only</b> — this installs a 6144-bit RSA certificate, which is now extremely expensive to handshake under the stricter policy.</li>
+            <li><b>Result:</b> one server becomes 20x slower on TLS handshakes. Customers see intermittent slowness (fast when the load balancer routes to the healthy server, slow when it routes to the affected one). Health checks still pass. Error rates are 0%. No alerts fire.</li>
           </ul>
+          <p>The multi-agent system investigates both platforms simultaneously, correlates the two changes, identifies the root cause, writes a remediation playbook, executes it via AAP, and produces an RCA report — all autonomously.</p>
         </div>
 
         <div class="status-row" id="status-row">
