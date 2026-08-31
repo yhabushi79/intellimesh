@@ -1,54 +1,16 @@
+# playbooks/run-aap/agent_execution_slot.yml
 ---
-- name: Restore TLS Private Key and Certificate to Baseline RSA-4096
-  hosts: all
-  become: true
+# ┌─────────────────────────────────────────────────────────┐
+# │ AGENT EXECUTION SLOT                                     │
+# │ Designated workspace for autonomous agent operations.   │
+# │ Content is overwritten per-task via GitHub MCP.         │
+# │ DO NOT manually edit — agent-managed only.              │
+# └─────────────────────────────────────────────────────────┘
+- name: "Agent Execution Slot - No Active Task"
+  hosts: localhost
+  gather_facts: false
   tasks:
-    - name: Ensure OpenSSL is installed
-      ansible.builtin.package:
-        name: openssl
-        state: present
-
-    - name: Regenerate self-signed TLS certificate and private key using RSA-4096 (baseline Job 370)
-      ansible.builtin.command: >
-        openssl req -x509 -nodes -days 365 -newkey rsa:4096
-        -keyout /etc/pki/tls/private/demo.key
-        -out /etc/pki/tls/certs/demo.crt
-        -subj "/CN=app-demo.example.com"
-      args:
-        creates: ""
-
-    - name: Ensure correct permissions on private key
-      ansible.builtin.file:
-        path: /etc/pki/tls/private/demo.key
-        owner: root
-        group: root
-        mode: '0600'
-
-    - name: Ensure correct permissions on certificate
-      ansible.builtin.file:
-        path: /etc/pki/tls/certs/demo.crt
-        owner: root
-        group: root
-        mode: '0644'
-
-    - name: Restart httpd service to reload certificate and key
-      ansible.builtin.service:
-        name: httpd
-        state: restarted
-
-    - name: Validate - private key is RSA 4096 bits
-      ansible.builtin.command: openssl rsa -in /etc/pki/tls/private/demo.key -text -noout
-      register: rsa_check
-      changed_when: false
-      failed_when: "'4096 bit' not in rsa_check.stdout"
-
-    - name: Validate - httpd is active
-      ansible.builtin.command: systemctl is-active httpd
-      register: svc_check
-      changed_when: false
-      failed_when: svc_check.stdout.strip() != 'active'
-
-    - name: Validate - port 443 is listening
-      ansible.builtin.wait_for:
-        port: 443
-        timeout: 10
+    - name: No task loaded
+      ansible.builtin.debug:
+        msg: "This slot has no active task. An agent must populate it before execution."
+      failed_when: true
