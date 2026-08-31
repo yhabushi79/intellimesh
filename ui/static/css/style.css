@@ -540,6 +540,10 @@ body {
   border-radius: 22px;
   border: 2px solid;
   opacity: 0;
+  animation: none;
+}
+
+.topo-node.topo-status-running .pulse-ring {
   animation: topo-pulse-ring 2.5s ease-out infinite;
 }
 
@@ -595,8 +599,8 @@ body {
 .topology-graph .mini-orch  { background: #0f1a1c; border-color: #06b6d4; }
 .topology-graph .mini-orch .pulse-ring { border-color: #22d3ee; }
 
-.topology-graph .mini-agent { background: #150f1a; border-color: #7c3aed; }
-.topology-graph .mini-agent .pulse-ring { border-color: #a78bfa; }
+.topology-graph .mini-agent { background: #0f1a1c; border-color: #06b6d4; }
+.topology-graph .mini-agent .pulse-ring { border-color: #22d3ee; }
 
 .topology-graph .mini-mcp   { background: #1a140f; border-color: #f97316; }
 
@@ -1388,7 +1392,13 @@ textarea { resize: vertical; }
 
 .topo-node.topo-status-running .mini-body,
 .topo-node.topo-status-running .node-body {
+  border-color: #7c3aed !important;
+  background: #150f1a !important;
   animation: topo-node-running 2s ease-in-out infinite;
+}
+
+.topo-node.topo-status-running .mini-body .pulse-ring {
+  border-color: #a78bfa !important;
 }
 
 .topo-node.topo-status-complete .mini-body,
