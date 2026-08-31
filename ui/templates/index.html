@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>IntelliMesh Console</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=40">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=41">
 </head>
 <body>
   <header class="app-header">
@@ -53,7 +53,7 @@
             </div>
             <div class="step-body">
               <div class="step-title">Update Satellite Crypto Policy</div>
-              <p class="step-desc">Done from the Satellite portal, like in real life: <b>Hosts</b> → select both RHEL VMs → <b>Schedule Remote Execution</b> → command <code>update-crypto-policies --set FUTURE:CLASSICAL-COMPAT</code>. Once applied, verify it stuck:</p>
+              <p class="step-desc">Done from the Satellite portal, like in real life: <b>Hosts</b> → select both RHEL VMs → <b>Schedule Remote Execution</b> → command <code>update-crypto-policies --set FUTURE:CLASSICAL-COMPAT</code><button class="btn-copy" title="Copy command" onclick="navigator.clipboard.writeText('update-crypto-policies --set FUTURE:CLASSICAL-COMPAT').then(()=>{this.textContent='✓';setTimeout(()=>this.textContent='⧉',1200)})">⧉</button>. Once applied, verify it stuck:</p>
               <div class="step-actions">
                 <a id="link-satellite" class="btn btn-outline" href="#" target="_blank" rel="noopener">Open Satellite Portal ↗</a>
                 <button id="btn-verify-crypto" class="btn btn-secondary btn-small">Verify Policy Applied</button>
