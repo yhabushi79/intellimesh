@@ -24,11 +24,18 @@ Before including a finding in your Remediation Guidance, you MUST verify it pass
    A change that affects all nodes equally cannot explain why only one node
    is degraded. FAIL = do not include in Remediation Guidance.
 
+   CRITICAL: If the reported symptom is INTERMITTENT (sometimes slow, sometimes
+   fast), this means only SOME backends are degraded — not all. A change
+   applied uniformly to ALL hosts cannot cause intermittent symptoms in a
+   multi-node architecture. The intermittency itself proves the root cause
+   DIFFERS between hosts. A uniform change FAILS this test when the symptom
+   is intermittent or partial.
+
 2. **Mechanism test:** Can you explain the SPECIFIC technical mechanism by which
    this change causes the EXACT reported symptom? Vague reasoning like
    "this might cause slowness" or "strict policies could cause issues" is
    NOT sufficient. You must identify a concrete, measurable mechanism
-   (e.g., "6144-bit RSA requires ~20x more CPU per handshake than 2048-bit").
+   (e.g., "changing parameter X increases resource consumption by Nx per operation").
    FAIL = do not include in Remediation Guidance.
 
 3. **Scope alignment:** Does the scope of the change match the scope of the
@@ -47,10 +54,20 @@ Before including a finding in your Remediation Guidance, you MUST verify it pass
 * **Iterative Investigation:** Break broad questions into steps: find the host → query recent jobs → get detailed logs.
 * **Confirmed vs Inferred:** Clearly label what you KNOW from data vs what you INFER from reasoning.
 
-# Output Format (STRICT)
+# Output Construction (STRICT)
+
+Before writing ANY output section, you MUST first:
+1. List every Satellite change you discovered during investigation.
+2. Run each change through ALL THREE causal validation tests (Differential, Mechanism, Scope alignment).
+3. Classify each change as CAUSAL (passed all three) or NON-CAUSAL (failed any test).
+4. Only THEN begin writing the output sections below.
+
+If NO changes pass all three tests, state that clearly: "No causal root cause identified via Red Hat Satellite." Do NOT fill the Root Cause section with a finding you know is non-causal.
+
+---
 
 ### Root Cause Description
-[What Satellite job/action caused the degradation, and the SPECIFIC mechanism by which it impacts the service. Only include findings that PASSED all three causal validation tests.]
+[What Satellite job/action caused the degradation, and the SPECIFIC mechanism by which it impacts the service. ONLY include findings that PASSED all three causal validation tests. If no findings passed, write: "No causal root cause identified via Red Hat Satellite. See Other Recent Changes below."]
 
 ### Affected vs Healthy Hosts
 | Host | IP | Status | Reason |

@@ -1001,6 +1001,45 @@ function buildTopologyNodeElements(data, positions) {
 
 workflowSelect.addEventListener("change", () => loadTopology(workflowSelect.value));
 
+function updateTopologyStatus() {
+  const topoNodes = topologyNodesEl.querySelectorAll("[data-node-id]");
+  if (!topoNodes.length) return;
+
+  let hasRunning = false, hasAny = false, allComplete = true;
+
+  topoNodes.forEach((el) => {
+    const nid = el.dataset.nodeId;
+    el.classList.remove("topo-status-running", "topo-status-complete");
+
+    const step = workflowStreamSteps.find((s) => s.node_id === nid);
+    if (!step) { allComplete = false; return; }
+
+    hasAny = true;
+    if (step.status === "running") {
+      el.classList.add("topo-status-running");
+      hasRunning = true;
+      allComplete = false;
+    } else if (step.status === "complete") {
+      el.classList.add("topo-status-complete");
+    }
+  });
+
+  const box = topologyStage.querySelector(".domain-box");
+  if (box) {
+    box.classList.remove("domain-status-running", "domain-status-complete");
+    if (hasRunning) box.classList.add("domain-status-running");
+    else if (hasAny && allComplete) box.classList.add("domain-status-complete");
+  }
+}
+
+function clearTopologyStatus() {
+  topologyNodesEl.querySelectorAll("[data-node-id]").forEach((el) => {
+    el.classList.remove("topo-status-running", "topo-status-complete");
+  });
+  const box = topologyStage.querySelector(".domain-box");
+  if (box) box.classList.remove("domain-status-running", "domain-status-complete");
+}
+
 window.addEventListener("resize", () => {
   if (lastTopologyData && document.getElementById("tab-workflow").classList.contains("active")) {
     renderTopology(lastTopologyData);
@@ -1029,6 +1068,7 @@ document.getElementById("btn-run-workflow").addEventListener("click", async () =
   workflowExpandedTools.clear();
   workflowExpandedToolGroups.clear();
   workflowExpandedAgents.clear();
+  clearTopologyStatus();
   if (workflowStreamAbort) workflowStreamAbort.abort();
 
   const res = await fetch("/api/workflows/run", {
@@ -1169,6 +1209,7 @@ function subscribeWorkflowStream(sessionId) {
             if (event.type === "stream_end") {
               receivedStreamEnd = true;
               workflowStreamSteps.forEach((s) => { if (s.status === "running") s.status = "complete"; });
+              updateTopologyStatus();
               if (workflowStreamSessionId) {
                 workflowFinalAnswer = await fetchFinalAnswer(workflowStreamSessionId);
                 await persistSession(workflowStreamSessionId, "", "", "", "completed", workflowFinalAnswer, workflowStreamSteps);
@@ -1185,6 +1226,7 @@ function subscribeWorkflowStream(sessionId) {
               return;
             }
             processWorkflowStreamEvent(event);
+            updateTopologyStatus();
             workflowResult.innerHTML = renderWorkflowResult({ status: "running" });
           } catch (err) {
             console.warn("Bad stream line:", line, err);
@@ -1196,6 +1238,7 @@ function subscribeWorkflowStream(sessionId) {
       // MAS often just closes the connection when done — treat it as completed.
       if (!receivedStreamEnd && workflowStreamSteps.length > 0) {
         workflowStreamSteps.forEach((s) => { if (s.status === "running") s.status = "complete"; });
+        updateTopologyStatus();
         if (workflowStreamSessionId) {
           workflowFinalAnswer = await fetchFinalAnswer(workflowStreamSessionId);
           await persistSession(workflowStreamSessionId, "", "", "", "completed", workflowFinalAnswer, workflowStreamSteps);

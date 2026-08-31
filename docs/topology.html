@@ -496,7 +496,14 @@
                 </div>
             </div>
 
-            <div id="card-mas" class="sidebar-card card-teal collapsed">
+            <div id="card-result" class="sidebar-card card-blue collapsed">
+                <h3 onclick="toggleCard(this)">The Result</h3>
+                <div class="card-content">
+                    <p>Both platforms report green. But Node 2 is now 20x slower on every TLS handshake. Customers experience intermittent slowness. No alerts fire. No errors logged.</p>
+                </div>
+            </div>
+
+            <div id="card-mas" class="sidebar-card card-teal ai-layer" style="display: none;">
                 <h3 onclick="toggleCard(this)">Multi-Agent System</h3>
                 <div class="card-content">
                     <p>The multi-agent system sees what individual platforms cannot:</p>
@@ -507,13 +514,6 @@
                         <li>Cross-correlates timelines across both platforms</li>
                         <li>Identifies the root cause and suggests remediation</li>
                     </ul>
-                </div>
-            </div>
-
-            <div id="card-result" class="sidebar-card card-blue collapsed">
-                <h3 onclick="toggleCard(this)">The Result</h3>
-                <div class="card-content">
-                    <p>Both platforms report green. But Node 2 is now 20x slower on every TLS handshake. Customers experience intermittent slowness. No alerts fire. No errors logged.</p>
                 </div>
             </div>
         </aside>
@@ -762,6 +762,17 @@
             svgEl.setAttribute('viewBox', aiLayerVisible ? '0 0 1100 480' : '0 0 900 480');
             btn.textContent = aiLayerVisible ? 'Hide MAS Layer' : 'Show MAS Layer';
             btn.classList.toggle('active', aiLayerVisible);
+
+            const masCard = document.getElementById('card-mas');
+            if (masCard) {
+                if (aiLayerVisible) {
+                    document.querySelectorAll('.sidebar-card').forEach(c => c.classList.add('collapsed'));
+                    masCard.classList.remove('collapsed');
+                } else {
+                    masCard.classList.add('collapsed');
+                }
+            }
+
             scaleCanvas();
             drawLinks();
         }

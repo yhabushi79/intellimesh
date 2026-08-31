@@ -1370,6 +1370,67 @@ textarea { resize: vertical; }
   color: var(--text);
 }
 
+/* ── Live topology node status during workflow execution ────────────── */
+
+.topo-node.topo-status-running .mini-body,
+.topo-node.topo-status-running .node-body {
+  animation: topo-node-running 2s ease-in-out infinite;
+}
+
+.topo-node.topo-status-complete .mini-body,
+.topo-node.topo-status-complete .node-body {
+  border-color: var(--green) !important;
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.4), 0 0 24px rgba(34, 197, 94, 0.15);
+}
+
+.topo-node.topo-status-complete .mini-body .pulse-ring,
+.topo-node.topo-status-complete .node-body .pulse-ring {
+  border-color: var(--green) !important;
+}
+
+.topo-node.topo-status-complete .node-label .name {
+  color: #86efac;
+}
+
+@keyframes topo-node-running {
+  0%, 100% {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 8px rgba(168, 85, 247, 0.3);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 20px rgba(168, 85, 247, 0.6), 0 0 40px rgba(99, 102, 241, 0.25);
+    filter: brightness(1.15);
+  }
+}
+
+.topology-graph .domain-box.domain-status-running {
+  border-color: rgba(168, 85, 247, 0.4);
+  background: rgba(168, 85, 247, 0.04);
+  animation: topo-domain-running 3s ease-in-out infinite;
+}
+
+.topology-graph .domain-box.domain-status-complete {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.04);
+}
+
+.topology-graph .domain-box.domain-status-complete .domain-label {
+  color: var(--green);
+}
+
+@keyframes topo-domain-running {
+  0%, 100% { border-color: rgba(168, 85, 247, 0.25); }
+  50% { border-color: rgba(168, 85, 247, 0.55); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topo-node.topo-status-running .mini-body,
+  .topo-node.topo-status-running .node-body,
+  .topology-graph .domain-box.domain-status-running {
+    animation: none;
+  }
+}
+
 @media (max-width: 980px) {
   .grid-demo, .grid-workflow { grid-template-columns: 1fr; }
   .grid-workflow { min-height: auto; }
