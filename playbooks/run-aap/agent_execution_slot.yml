@@ -9,6 +9,12 @@
     demo_domain: app-demo.example.com
 
   tasks:
+    - name: Remove compliance override config if present
+      ansible.builtin.file:
+        path: /etc/httpd/conf.d/tls-compliance-override.conf
+        state: absent
+      notify: restart httpd
+
     - name: Regenerate self-signed TLS certificate with RSA-4096
       ansible.builtin.command:
         cmd: >
