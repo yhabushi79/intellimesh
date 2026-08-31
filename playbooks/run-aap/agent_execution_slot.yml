@@ -86,8 +86,8 @@
       changed_when: false
       failed_when: svc_check.stdout.strip() != 'active'
 
-    - name: Validate - httpd listening status
-      ansible.builtin.command: ss -tlnp | grep -E ':443|:80'
+    - name: Validate - httpd listening status using proper shell command
+      ansible.builtin.shell: ss -tlnp | grep -E ':443|:80'
       register: port_check
       changed_when: false
 
