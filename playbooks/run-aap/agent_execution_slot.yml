@@ -78,14 +78,15 @@
       changed_when: false
       failed_when: svc_check.stdout.strip() != 'active'
 
-    - name: Validate - port 443 is listening
+    - name: Validate - mod_ssl is configured and listening on port 443
       ansible.builtin.wait_for:
+        host: "{{ inventory_hostname }}"
         port: 443
         timeout: 10
 
     - name: Validate - payment endpoint responds correctly over TLS
       ansible.builtin.uri:
-        url: "https://localhost/api/payments"
+        url: "https://{{ inventory_hostname }}/api/payments"
         validate_certs: false
         status_code: [200, 401, 403, 404]
         timeout: 10
