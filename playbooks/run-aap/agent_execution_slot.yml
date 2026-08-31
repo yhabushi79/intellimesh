@@ -1,99 +1,16 @@
+# playbooks/run-aap/agent_execution_slot.yml
 ---
-- name: Restore Baseline RSA-4096 TLS Configuration and SSL Parameters on Backend
-  hosts: all
-  become: true
+# ┌─────────────────────────────────────────────────────────┐
+# │ AGENT EXECUTION SLOT                                     │
+# │ Designated workspace for autonomous agent operations.   │
+# │ Content is overwritten per-task via GitHub MCP.         │
+# │ DO NOT manually edit — agent-managed only.              │
+# └─────────────────────────────────────────────────────────┘
+- name: "Agent Execution Slot - No Active Task"
+  hosts: localhost
+  gather_facts: false
   tasks:
-    - name: Ensure TLS private key directory exists
-      ansible.builtin.file:
-        path: /etc/pki/tls/private
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
-
-    - name: Ensure TLS certs directory exists
-      ansible.builtin.file:
-        path: /etc/pki/tls/certs
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
-
-    - name: Remove oversized demo.key to allow clean regeneration of RSA 4096-bit key
-      ansible.builtin.file:
-        path: /etc/pki/tls/private/demo.key
-        state: absent
-
-    - name: Remove old demo.crt to match the new RSA 4096-bit key
-      ansible.builtin.file:
-        path: /etc/pki/tls/certs/demo.crt
-        state: absent
-
-    - name: Generate baseline RSA 4096-bit private key
-      ansible.builtin.command:
-        cmd: openssl genrsa -out /etc/pki/tls/private/demo.key 4096
-
-    - name: Set secure permissions on RSA 4096-bit private key
-      ansible.builtin.file:
-        path: /etc/pki/tls/private/demo.key
-        owner: root
-        group: root
-        mode: '0600'
-
-    - name: Generate baseline self-signed x509 certificate with RSA 4096-bit key
-      ansible.builtin.command:
-        cmd: openssl req -new -x509 -key /etc/pki/tls/private/demo.key -out /etc/pki/tls/certs/demo.crt -days 365 -subj "/CN=app-demo.example.com"
-
-    - name: Set secure permissions on self-signed certificate
-      ansible.builtin.file:
-        path: /etc/pki/tls/certs/demo.crt
-        owner: root
-        group: root
-        mode: '0644'
-
-    - name: Restore baseline ssl-params.conf configuration
-      ansible.builtin.copy:
-        dest: /etc/httpd/conf.d/ssl-params.conf
-        owner: root
-        group: root
-        mode: '0644'
-        content: |
-          # Baseline SSL Session Parameters
-          SSLSessionCache shmcb:/run/httpd/sslscache(512000)
-          SSLSessionCacheTimeout 300
-
-          SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
-          SSLCipherSuite HIGH:MEDIUM:!aNULL:!MD5:!SEED:!IDEA
-
-          SSLHonorCipherOrder on
-          SSLCompression off
-          SSLSessionTickets off
-
-    - name: Restore correct SELinux security context on certificate and key
-      ansible.builtin.command:
-        cmd: restorecon -Rv /etc/pki/tls/
-      changed_when: false
-
-    - name: Restart httpd service to apply baseline configuration
-      ansible.builtin.service:
-        name: httpd
-        state: restarted
-        enabled: true
-
-    - name: Validate - httpd service is active
-      ansible.builtin.command: systemctl is-active httpd
-      register: svc_check
-      changed_when: false
-      failed_when: svc_check.stdout.strip() != 'active'
-
-    - name: Validate - httpd listening status using proper shell command
-      ansible.builtin.shell: ss -tlnp | grep -E ':443|:80'
-      register: port_check
-      changed_when: false
-
-    - name: Validate - payment endpoint responds correctly over HTTP/HTTPS
-      ansible.builtin.uri:
-        url: "http://localhost/api/payments"
-        validate_certs: false
-        status_code: [200, 401, 403, 404]
-        timeout: 10
+    - name: No task loaded
+      ansible.builtin.debug:
+        msg: "This slot has no active task. An agent must populate it before execution."
+      failed_when: true
