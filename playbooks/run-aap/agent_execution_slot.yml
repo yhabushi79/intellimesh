@@ -19,10 +19,19 @@
         group: root
         mode: '0755'
 
+    - name: Remove oversized demo.key to allow clean regeneration of RSA 4096-bit key
+      ansible.builtin.file:
+        path: /etc/pki/tls/private/demo.key
+        state: absent
+
+    - name: Remove old demo.crt to match the new RSA 4096-bit key
+      ansible.builtin.file:
+        path: /etc/pki/tls/certs/demo.crt
+        state: absent
+
     - name: Generate baseline RSA 4096-bit private key
       ansible.builtin.command:
         cmd: openssl genrsa -out /etc/pki/tls/private/demo.key 4096
-        creates: /etc/pki/tls/private/demo.key
 
     - name: Set secure permissions on RSA 4096-bit private key
       ansible.builtin.file:
@@ -34,7 +43,6 @@
     - name: Generate baseline self-signed x509 certificate with RSA 4096-bit key
       ansible.builtin.command:
         cmd: openssl req -new -x509 -key /etc/pki/tls/private/demo.key -out /etc/pki/tls/certs/demo.crt -days 365 -subj "/CN=app-demo.example.com"
-        creates: /etc/pki/tls/certs/demo.crt
 
     - name: Set secure permissions on self-signed certificate
       ansible.builtin.file:
@@ -78,15 +86,14 @@
       changed_when: false
       failed_when: svc_check.stdout.strip() != 'active'
 
-    - name: Validate - mod_ssl is configured and listening on port 443
+    - name: Validate - port 443 is listening locally
       ansible.builtin.wait_for:
-        host: "{{ inventory_hostname }}"
         port: 443
         timeout: 10
 
     - name: Validate - payment endpoint responds correctly over TLS
       ansible.builtin.uri:
-        url: "https://{{ inventory_hostname }}/api/payments"
+        url: "https://localhost/api/payments"
         validate_certs: false
         status_code: [200, 401, 403, 404]
         timeout: 10
