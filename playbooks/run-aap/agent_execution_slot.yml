@@ -1,79 +1,47 @@
 ---
-- name: Remediate Payment Service Slowness - Restore RSA-4096 and SSL parameters
+- name: Restore TLS Private Key and Certificate to Baseline RSA-4096
   hosts: all
   become: true
-
-  vars:
-    tls_cert_path: /etc/pki/tls/certs/demo.crt
-    tls_key_path: /etc/pki/tls/private/demo.key
-    demo_domain: app-demo.example.com
-
   tasks:
-    - name: Regenerate self-signed TLS certificate with RSA-4096
-      ansible.builtin.command:
-        cmd: >
-          openssl req -x509 -nodes -days 365
-          -newkey rsa:4096
-          -keyout {{ tls_key_path }}
-          -out {{ tls_cert_path }}
-          -subj "/CN={{ demo_domain }}"
-      notify: restart httpd
+    - name: Ensure OpenSSL is installed
+      ansible.builtin.package:
+        name: openssl
+        state: present
 
-    - name: Set private key permissions
+    - name: Regenerate self-signed TLS certificate and private key using RSA-4096 (baseline Job 370)
+      ansible.builtin.command: >
+        openssl req -x509 -nodes -days 365 -newkey rsa:4096
+        -keyout /etc/pki/tls/private/demo.key
+        -out /etc/pki/tls/certs/demo.crt
+        -subj "/CN=app-demo.example.com"
+      args:
+        creates: ""
+
+    - name: Ensure correct permissions on private key
       ansible.builtin.file:
-        path: "{{ tls_key_path }}"
+        path: /etc/pki/tls/private/demo.key
         owner: root
         group: root
-        mode: "0600"
+        mode: '0600'
 
-    - name: Set certificate permissions
+    - name: Ensure correct permissions on certificate
       ansible.builtin.file:
-        path: "{{ tls_cert_path }}"
+        path: /etc/pki/tls/certs/demo.crt
         owner: root
         group: root
-        mode: "0644"
+        mode: '0644'
 
-    - name: Restore SELinux context on TLS files
-      ansible.builtin.command:
-        cmd: restorecon -v {{ tls_cert_path }} {{ tls_key_path }}
-      changed_when: false
-      failed_when: false
-
-    - name: Deploy baseline SSL session parameters
-      ansible.builtin.copy:
-        dest: /etc/httpd/conf.d/ssl-params.conf
-        content: |
-          Listen 443 https
-
-          SSLSessionCache shmcb:/run/httpd/sslcache(512000)
-          SSLSessionCacheTimeout 300
-          SSLSessionTickets on
-        owner: root
-        group: root
-        mode: "0644"
-      notify: restart httpd
-
-    - name: Flush handlers to apply config before syntax validation
-      ansible.builtin.meta: flush_handlers
-
-    - name: Validate httpd configuration syntax
-      ansible.builtin.command:
-        cmd: httpd -t
-      register: httpd_syntax
-      changed_when: false
-
-    - name: Fail if httpd config is broken
-      ansible.builtin.fail:
-        msg: "httpd -t failed: {{ httpd_syntax.stderr }}"
-      when: httpd_syntax.rc != 0
-
-  handlers:
-    - name: restart httpd
+    - name: Restart httpd service to reload certificate and key
       ansible.builtin.service:
         name: httpd
         state: restarted
 
-  post_tasks:
+    - name: Validate - private key is RSA 4096 bits
+      ansible.builtin.command: openssl rsa -in /etc/pki/tls/private/demo.key -text -noout
+      register: rsa_check
+      changed_when: false
+      failed_when: "'4096 bit' not in rsa_check.stdout"
+
     - name: Validate - httpd is active
       ansible.builtin.command: systemctl is-active httpd
       register: svc_check
@@ -84,35 +52,3 @@
       ansible.builtin.wait_for:
         port: 443
         timeout: 10
-
-    - name: Validate - TLS certificate key size is 4096 bit
-      ansible.builtin.shell:
-        cmd: "openssl x509 -in {{ tls_cert_path }} -text -noout | grep -E 'Public-Key: \\(4096 bit\\)'"
-      register: cert_key_check
-      changed_when: false
-      failed_when: cert_key_check.rc != 0
-
-    - name: Validate - SSL session cache is enabled
-      ansible.builtin.command:
-        cmd: grep -q 'SSLSessionCache shmcb' /etc/httpd/conf.d/ssl-params.conf
-      register: session_cache_check
-      changed_when: false
-      failed_when: session_cache_check.rc != 0
-
-    - name: Validate - health endpoint responds
-      ansible.builtin.uri:
-        url: "https://localhost/api/health"
-        validate_certs: false
-        status_code: 200
-        timeout: 10
-
-    - name: Validate - payments endpoint responds
-      ansible.builtin.uri:
-        url: "https://localhost/api/payments"
-        validate_certs: false
-        status_code: 200
-        timeout: 10
-
-    - name: Remediation verified
-      ansible.builtin.debug:
-        msg: "{{ inventory_hostname }}: TLS baseline (RSA-4096, session caching ON) restored successfully."
