@@ -1,5 +1,5 @@
 ---
-- name: Remediate TLS certificate key size and SSL parameters
+- name: Remediate Payment Service TLS Configuration and Latency Bottleneck
   hosts: all
   become: true
 
