@@ -1,0 +1,74 @@
+---
+- name: Remediation for Intermittent Payment Slowness
+  hosts: 10.46.253.221
+  become: yes
+  tasks:
+    - name: Generate RSA-4096 private key
+      community.crypto.openssl_privatekey:
+        path: /etc/pki/tls/private/demo.key
+        size: 4096
+        type: RSA
+        mode: '0600'
+        owner: root
+        group: root
+
+    - name: Generate Certificate Signing Request
+      community.crypto.openssl_csr:
+        path: /etc/pki/tls/certs/demo.csr
+        privatekey_path: /etc/pki/tls/private/demo.key
+        common_name: app-demo.example.com
+
+    - name: Generate Self-Signed Certificate
+      community.crypto.x509_certificate:
+        path: /etc/pki/tls/certs/demo.crt
+        privatekey_path: /etc/pki/tls/private/demo.key
+        csr_path: /etc/pki/tls/certs/demo.csr
+        provider: selfsigned
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Restore SSL parameters configuration
+      ansible.builtin.lineinfile:
+        path: /etc/httpd/conf.d/ssl-params.conf
+        regexp: '^SSLSessionCache\s+'
+        line: 'SSLSessionCache shmcb'
+        create: yes
+
+    - name: Apply restorecon to private key
+      ansible.builtin.command: restorecon -v /etc/pki/tls/private/demo.key
+
+    - name: Apply restorecon to certificate
+      ansible.builtin.command: restorecon -v /etc/pki/tls/certs/demo.crt
+
+    - name: Restart httpd service
+      ansible.builtin.systemd:
+        name: httpd
+        state: restarted
+        enabled: yes
+
+    - name: Wait for port 443 to respond
+      ansible.builtin.wait_for:
+        port: 443
+        host: 127.0.0.1
+        timeout: 30
+
+    - name: Validate certificate key size is 4096
+      ansible.builtin.command: openssl rsa -in /etc/pki/tls/private/demo.key -text -noout
+      register: rsa_check
+      changed_when: false
+      failed_when: "'Private-Key: (4096 bit' not in rsa_check.stdout"
+
+    - name: Validate /api/health returns HTTP 200
+      ansible.builtin.uri:
+        url: https://127.0.0.1/api/health
+        validate_certs: no
+        return_content: yes
+        status_code: 200
+
+    - name: Validate /api/payments returns HTTP 200
+      ansible.builtin.uri:
+        url: https://127.0.0.1/api/payments
+        validate_certs: no
+        return_content: yes
+        status_code: 200
