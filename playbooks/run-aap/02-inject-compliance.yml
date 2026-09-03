@@ -17,11 +17,11 @@
         - "{{ tls_cert_path }}"
         - "{{ tls_key_path }}"
 
-    - name: Generate RSA-4096 TLS certificate
+    - name: Generate RSA-6144 TLS certificate
       ansible.builtin.command:
         cmd: >
           openssl req -x509 -nodes -days 365
-          -newkey rsa:4096
+          -newkey rsa:6144
           -keyout {{ tls_key_path }}
           -out {{ tls_cert_path }}
           -subj "/CN={{ demo_domain }}"
