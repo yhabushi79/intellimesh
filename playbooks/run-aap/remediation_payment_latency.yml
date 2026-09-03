@@ -1,0 +1,114 @@
+---
+- name: "Remediation: Restore TLS certificate and SSL session parameters"
+  hosts: all
+  become: true
+
+  vars:
+    tls_cert_path: /etc/pki/tls/certs/demo.crt
+    tls_key_path: /etc/pki/tls/private/demo.key
+    demo_domain: app-demo.example.com
+
+  tasks:
+    - name: Generate self-signed TLS certificate (RSA 4096)
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509 -nodes -days 365
+          -newkey rsa:4096
+          -keyout {{ tls_key_path }}
+          -out {{ tls_cert_path }}
+          -subj "/CN={{ demo_domain }}"
+      notify: restart httpd
+
+    - name: Set private key permissions
+      ansible.builtin.file:
+        path: "{{ tls_key_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Set certificate permissions
+      ansible.builtin.file:
+        path: "{{ tls_cert_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Restore SELinux context on TLS files
+      ansible.builtin.command:
+        cmd: restorecon -v {{ tls_cert_path }} {{ tls_key_path }}
+      changed_when: false
+      failed_when: false
+
+    - name: Deploy baseline SSL session parameters
+      ansible.builtin.copy:
+        dest: /etc/httpd/conf.d/ssl-params.conf
+        content: |
+          Listen 443 https
+
+          SSLSessionCache shmcb:/run/httpd/sslcache(512000)
+          SSLSessionCacheTimeout 300
+          SSLSessionTickets on
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart httpd
+
+    - name: Validate httpd configuration syntax
+      ansible.builtin.command:
+        cmd: httpd -t
+      register: httpd_syntax
+      changed_when: false
+
+    - name: Fail if httpd config is broken
+      ansible.builtin.fail:
+        msg: "httpd -t failed: {{ httpd_syntax.stderr }}"
+      when: httpd_syntax.rc != 0
+
+  handlers:
+    - name: restart httpd
+      ansible.builtin.service:
+        name: httpd
+        state: restarted
+
+  post_tasks:
+    - name: Validate - httpd is active
+      ansible.builtin.command: systemctl is-active httpd
+      register: svc_check
+      changed_when: false
+      failed_when: svc_check.stdout.strip() != 'active'
+
+    - name: Validate - port 443 is listening
+      ansible.builtin.wait_for:
+        port: 443
+        timeout: 10
+
+    - name: Validate - TLS certificate key size is 4096 bit
+      ansible.builtin.shell:
+        cmd: "openssl x509 -in {{ tls_cert_path }} -text -noout | grep -E 'Public-Key: \\(4096 bit\\)'"
+      register: cert_key_check
+      changed_when: false
+      failed_when: cert_key_check.rc != 0
+
+    - name: Validate - SSL session cache is enabled
+      ansible.builtin.command:
+        cmd: grep -q 'SSLSessionCache shmcb' /etc/httpd/conf.d/ssl-params.conf
+      changed_when: false
+      failed_when: false
+
+    - name: Validate - health endpoint responds
+      ansible.builtin.uri:
+        url: "https://localhost/api/health"
+        validate_certs: false
+        status_code: 200
+        timeout: 10
+
+    - name: Validate - payments endpoint responds
+      ansible.builtin.uri:
+        url: "https://localhost/api/payments"
+        validate_certs: false
+        status_code: 200
+        timeout: 10
+
+    - name: Baseline applied
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: TLS baseline (RSA-4096, session caching ON) applied successfully."
