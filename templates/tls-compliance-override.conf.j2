@@ -1,4 +1,5 @@
 Listen 443 https
 
-SSLSessionCache none
-SSLSessionTickets off
+SSLSessionCache shmcb:/run/httpd/sslcache(512000)
+SSLSessionCacheTimeout 300
+SSLSessionTickets on
